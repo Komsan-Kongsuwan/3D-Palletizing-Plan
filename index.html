@@ -383,7 +383,7 @@ html.light #theme-toggle-thumb { left: 17px; }
           <div id="pallet-type-overlay"></div>
           <div id="dev-overlay">
             <div>Developed by Komsan Kongsuwan</div>
-            <div><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="771c181a041619591c181910040200161937101a161e1b5914181a">[email&#160;protected]</a></div>
+            <div>komsan.kongsuwan@gmail.com</div>
             <div>+66-81-723-9680</div>
           </div>
         </div>
@@ -461,7 +461,7 @@ html.light #theme-toggle-thumb { left: 17px; }
   </div><!-- /#main-row -->
 </div>
 
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+<script>
 // ── PALLET TYPES ─────────────────────────────────────────────────────────────
 const STANDARD_KEYS = new Set(['euro','us','iso','half','chep']);
 const PALLETS = {
@@ -685,8 +685,6 @@ const palletGroup = new THREE.Group();
 scene.add(palletGroup);
 const boxGroup = new THREE.Group();
 scene.add(boxGroup);
-const dimGroup = new THREE.Group();
-scene.add(dimGroup);
 
 function buildGrid(p) {
   while (gridGroup.children.length) gridGroup.remove(gridGroup.children[0]);
@@ -785,7 +783,6 @@ function buildPallet(p) {
   palletGroup.add(ground);
 
   buildGrid(p);
-  buildDimensions(p);
   boxGroup.position.set(-hw, 0, -hd);
 
   // Camera
@@ -800,146 +797,6 @@ function buildPallet(p) {
   dirLight.shadow.camera.top = p.H*2; dirLight.shadow.camera.bottom = -p.H;
   dirLight.shadow.camera.far = diag*3;
   dirLight.shadow.camera.updateProjectionMatrix();
-}
-
-// ── DIMENSION ANNOTATIONS ─────────────────────────────────────────────────────
-function makeDimSprite(text, hexColor) {
-  const cw = 256, ch = 80;
-  const cv = document.createElement('canvas');
-  cv.width = cw; cv.height = ch;
-  const ctx = cv.getContext('2d');
-
-  // Background pill
-  ctx.fillStyle = hexColor;
-  const r = 20;
-  ctx.beginPath();
-  ctx.moveTo(r, 4); ctx.lineTo(cw-r, 4);
-  ctx.quadraticCurveTo(cw-4, 4, cw-4, r);
-  ctx.lineTo(cw-4, ch-r);
-  ctx.quadraticCurveTo(cw-4, ch-4, cw-r, ch-4);
-  ctx.lineTo(r, ch-4);
-  ctx.quadraticCurveTo(4, ch-4, 4, ch-r);
-  ctx.lineTo(4, r);
-  ctx.quadraticCurveTo(4, 4, r, 4);
-  ctx.closePath();
-  ctx.fill();
-
-  // Text
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 34px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, cw / 2, ch / 2);
-
-  const tex = new THREE.CanvasTexture(cv);
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-  const sprite = new THREE.Sprite(mat);
-  sprite.renderOrder = 999;
-  return sprite;
-}
-
-function addDimAnnotation(group, ax, ay, az, bx, by, bz, label, hexColor, tickDir) {
-  const linePts = [ax, ay, az, bx, by, bz];
-  const lineGeo = new THREE.BufferGeometry();
-  lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(linePts, 3));
-  const lineMat = new THREE.LineBasicMaterial({ color: hexColor, transparent: true, opacity: 0.85, depthTest: false });
-  const line = new THREE.Line(lineGeo, lineMat);
-  line.renderOrder = 998;
-  group.add(line);
-
-  // Extension / tick lines at each end
-  const tk = tickDir;
-  const tickLen = Math.max((Math.abs(bx-ax) + Math.abs(by-ay) + Math.abs(bz-az)) * 0.08, 3);
-  for (const [ox, oy, oz] of [[ax, ay, az], [bx, by, bz]]) {
-    const tPts = [
-      ox - tk[0]*tickLen, oy - tk[1]*tickLen, oz - tk[2]*tickLen,
-      ox + tk[0]*tickLen, oy + tk[1]*tickLen, oz + tk[2]*tickLen
-    ];
-    const tGeo = new THREE.BufferGeometry();
-    tGeo.setAttribute('position', new THREE.Float32BufferAttribute(tPts, 3));
-    const tick = new THREE.Line(tGeo, lineMat.clone());
-    tick.renderOrder = 998;
-    group.add(tick);
-  }
-
-  // Arrow heads (small triangle lines)
-  const len = Math.sqrt((bx-ax)**2 + (by-ay)**2 + (bz-az)**2);
-  const dx = (bx-ax)/len, dy = (by-ay)/len, dz = (bz-az)/len;
-  const aLen = Math.max(len * 0.06, 2);
-  for (const [ox, oy, oz, sign] of [[ax, ay, az, 1], [bx, by, bz, -1]]) {
-    // Arrow along the dim line, spread using tick dir
-    const aPts = [
-      ox + sign*dx*aLen - tk[0]*aLen*0.5, oy + sign*dy*aLen - tk[1]*aLen*0.5, oz + sign*dz*aLen - tk[2]*aLen*0.5,
-      ox, oy, oz,
-      ox + sign*dx*aLen + tk[0]*aLen*0.5, oy + sign*dy*aLen + tk[1]*aLen*0.5, oz + sign*dz*aLen + tk[2]*aLen*0.5,
-    ];
-    const aGeo = new THREE.BufferGeometry();
-    aGeo.setAttribute('position', new THREE.Float32BufferAttribute(aPts, 3));
-    const arrow = new THREE.Line(aGeo, lineMat.clone());
-    arrow.renderOrder = 998;
-    group.add(arrow);
-  }
-
-  // Label sprite at midpoint
-  const sprite = makeDimSprite(label, hexColor);
-  sprite.position.set((ax+bx)/2, (ay+by)/2, (az+bz)/2);
-  const scale = Math.max(len * 0.22, 14);
-  sprite.scale.set(scale * 3.2, scale, 1);
-  group.add(sprite);
-}
-
-function buildDimensions(p) {
-  while (dimGroup.children.length) dimGroup.remove(dimGroup.children[0]);
-
-  const L = p.L, W = p.W, guideH = p.H;
-  const hw = L/2, hd = W/2;
-  const off = Math.max(L, W) * 0.22;   // offset distance from pallet face
-  const yBase = 0;                       // at deck level
-
-  // ── LENGTH (L) along front face (Z = +hd), offset further in Z
-  const lOff = hd + off;
-  addDimAnnotation(dimGroup,
-    -hw, yBase, lOff,
-     hw, yBase, lOff,
-    `L: ${L} cm`, '#2e8a52', [0, 1, 0]   // tick in Y direction
-  );
-  // Extension lines from pallet corners to dim line
-  for (const sx of [-hw, hw]) {
-    const extPts = [sx, yBase, hd+1, sx, yBase, lOff];
-    const eg = new THREE.BufferGeometry();
-    eg.setAttribute('position', new THREE.Float32BufferAttribute(extPts, 3));
-    dimGroup.add(new THREE.Line(eg, new THREE.LineBasicMaterial({ color: 0x2e8a52, transparent:true, opacity:0.35, depthTest:false })));
-  }
-
-  // ── WIDTH (W) along right face (X = +hw), offset further in X
-  const wOff = hw + off;
-  addDimAnnotation(dimGroup,
-    wOff, yBase, -hd,
-    wOff, yBase,  hd,
-    `W: ${W} cm`, '#4a8fd4', [0, 1, 0]
-  );
-  for (const sz of [-hd, hd]) {
-    const extPts = [hw+1, yBase, sz, wOff, yBase, sz];
-    const eg = new THREE.BufferGeometry();
-    eg.setAttribute('position', new THREE.Float32BufferAttribute(extPts, 3));
-    dimGroup.add(new THREE.Line(eg, new THREE.LineBasicMaterial({ color: 0x4a8fd4, transparent:true, opacity:0.35, depthTest:false })));
-  }
-
-  // ── HEIGHT (H) along the right-back edge, offset out in both X and Z
-  const hOff = hw + off * 0.55;
-  const hzOff = -(hd + off * 0.55);
-  addDimAnnotation(dimGroup,
-    hOff, 0,      hzOff,
-    hOff, guideH, hzOff,
-    `H: ${guideH} cm`, '#d46060', [1, 0, 0]
-  );
-  // Extension lines from top/bottom corner to height dim
-  for (const sy of [0, guideH]) {
-    const extPts = [hw, sy, -hd, hOff, sy, hzOff];
-    const eg = new THREE.BufferGeometry();
-    eg.setAttribute('position', new THREE.Float32BufferAttribute(extPts, 3));
-    dimGroup.add(new THREE.Line(eg, new THREE.LineBasicMaterial({ color: 0xd46060, transparent:true, opacity:0.35, depthTest:false })));
-  }
 }
 
 buildPallet(PALLETS['euro']);
@@ -1297,7 +1154,6 @@ function changePallet(key) {
   packedBoxes = [];
   while (boxGroup.children.length) boxGroup.remove(boxGroup.children[0]);
   buildPallet(p);
-  buildDimensions(p);
   updateStats();
   document.getElementById('warn-overlay').textContent = '';
   renderPalletTypeCards();
@@ -1895,4 +1751,12 @@ updatePalletTypeOverlay();
 renderPalletTabs();
 initScrollbars();
 document.addEventListener('click', e => {
-  const popove
+  const popover = document.getElementById('add-pallet-popover');
+  const btn = document.getElementById('add-pallet-btn');
+  if (!popover.contains(e.target) && e.target !== btn) {
+    popover.classList.remove('open');
+  }
+});
+</script>
+</body>
+</html>
