@@ -359,7 +359,7 @@ html.light #theme-toggle-thumb { left: 17px; }
             <button class="btn danger" id="manual-undo-btn" onclick="manualUndo()">↩ Undo Last</button>
           </div>
           <div id="company-overlay">
-            <div id="company-name">DEMO LOGISTICS</div>
+            <div id="company-name">DEMO LOGISTICS SOLUTION</div>
             <div id="company-sub">Pallet Loading Plan</div>
             <p id="pallet-dims" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:4px;">120 × 80 cm · max 180 cm · 1,000 kg</p>
             <div id="stats-overlay">
@@ -429,16 +429,7 @@ html.light #theme-toggle-thumb { left: 17px; }
         </div>
       </div>
 
-      <div class="section">
-        <div class="section-title">Presets</div>
-        <div class="preset-chips">
-          <div class="chip sample" onclick="usePreset('carton_s')">Carton S</div>
-          <div class="chip sample" onclick="usePreset('carton_m')">Carton M</div>
-          <div class="chip sample" onclick="usePreset('carton_l')">Carton L</div>
-          <div class="chip sample" onclick="usePreset('box_heavy')">Heavy Box</div>
-          <div class="chip sample" onclick="usePreset('drum')">Drum</div>
-          <div class="chip sample" onclick="usePreset('crate')">Crate</div>
-        </div>
+      
       </div>
 
       <div class="section">
@@ -495,14 +486,7 @@ function toggleAddPalletPopover() {
 }
 
 // ── PRESETS ───────────────────────────────────────────────────────────────────
-const PRESETS = {
-  carton_s:  { name:'Carton S',   l:30, w:20, h:20, weight:5,  color:'#4cad72', upright:false },
-  carton_m:  { name:'Carton M',   l:40, w:30, h:30, weight:10, color:'#4a8fd4', upright:false },
-  carton_l:  { name:'Carton L',   l:60, w:40, h:40, weight:18, color:'#a87fd4', upright:false },
-  box_heavy: { name:'Heavy Box',  l:50, w:40, h:35, weight:28, color:'#c8a040', upright:false },
-  drum:      { name:'Drum',       l:58, w:58, h:85, weight:80, color:'#d46060', upright:true  },
-  crate:     { name:'Crate',      l:80, w:60, h:60, weight:40, color:'#f0c040', upright:false },
-};
+
 const PALETTE = ['#4cad72','#4a8fd4','#d46060','#a87fd4','#c8a040','#f0c040','#d48860','#60a8d4','#80c870','#6ab4d4'];
 
 let currentPKey = 'euro';
@@ -1211,17 +1195,7 @@ function removeItem(id) {
   if (appMode === 'manual') { renderManualItemSelect(); removeGhost(); manualSelectedItem = null; }
 }
 
-function usePreset(key) {
-  const p = PRESETS[key];
-  document.getElementById('inName').value = p.name;
-  document.getElementById('inL').value = p.l;
-  document.getElementById('inW').value = p.w;
-  document.getElementById('inH').value = p.h;
-  document.getElementById('inWt').value = p.weight;
-  document.getElementById('inQty').value = 1;
-  document.getElementById('inColor').value = p.color;
-  setUprightInput(p.upright);
-}
+
 
 function loadSample() {
   clearAll();
@@ -1601,7 +1575,7 @@ async function exportPDF() {
     const TP = 10;
     doc.setFillColor(255,255,255); doc.rect(0,0,PW,12+TP,'F');
     doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(30,32,40);
-    doc.text('DEMO LOGISTICS', M, 7.5+TP);
+    doc.text('DEMO LOGISTICS SOLUTION', M, 7.5+TP);
     doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(100,105,120);
     doc.text('Pallet Loading Plan', M, 11+TP);
     doc.setTextColor(60,65,80);
