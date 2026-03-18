@@ -1,0 +1,1898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pallet Load Planner 3D</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0e0f11;
+  --panel: #13151a;
+  --surface: #1a1d24;
+  --surface2: #21252e;
+  --border: rgba(255,255,255,0.07);
+  --border2: rgba(255,255,255,0.13);
+  --text: #d8dae0;
+  --muted: #5a6070;
+  --accent: #4cad72;
+  --accent2: #2e8a52;
+  --green: #4cad72;
+  --red: #d95f5f;
+  --blue: #4a8fd4;
+  --mono: 'Space Mono', monospace;
+  --sans: 'DM Sans', sans-serif;
+}
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--sans); }
+#app { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
+
+/* ── TOP BAR ── */
+#topbar {
+  flex-shrink: 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  display: flex; align-items: center; gap: 10px;
+  height: 52px;
+  position: relative; z-index: 50;
+}
+#topbar-title {
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase; color: var(--accent);
+  white-space: nowrap; margin-right: 4px;
+}
+#pallet-type-cards {
+  display: flex; gap: 6px; align-items: center;
+  overflow-x: auto; flex: 1; min-width: 0;
+}
+#pallet-type-cards::-webkit-scrollbar { height: 3px; }
+#pallet-type-cards::-webkit-scrollbar-thumb { background: var(--border2); }
+.ccard {
+  flex-shrink: 0; cursor: pointer;
+  padding: 5px 10px; border-radius: 4px;
+  background: var(--surface2); border: 1px solid var(--border);
+  transition: all 0.15s;
+}
+.ccard:hover { border-color: var(--border2); }
+.ccard.active { border-color: var(--accent); background: var(--surface); }
+.ccard-name { font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.ccard-dims { font-family: var(--mono); font-size: 8px; color: var(--muted); white-space: nowrap; margin-top: 1px; }
+.ccard-del { font-size: 10px; color: var(--muted); margin-left: 6px; cursor: pointer; }
+.ccard-del:hover { color: var(--red); }
+
+#add-pallet-btn {
+  flex-shrink: 0;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+  border: none; background: #4a7fa8; color: #fff;
+  padding: 5px 10px; cursor: pointer; border-radius: 4px; white-space: nowrap;
+  font-weight: 600; transition: all 0.15s;
+}
+#add-pallet-btn:hover { background: #5a92be; }
+#sample-load-btn {
+  flex-shrink: 0;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+  border: 1px solid var(--accent2); background: var(--accent2); color: #fff;
+  padding: 5px 10px; cursor: pointer; border-radius: 4px; white-space: nowrap;
+  font-weight: 700; transition: all 0.15s;
+}
+#sample-load-btn:hover { background: var(--accent); border-color: var(--accent); }
+#export-pdf-btn {
+  flex-shrink: 0;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+  border: none; background: #2e5d8a; color: #fff;
+  padding: 5px 10px; cursor: pointer; border-radius: 4px; white-space: nowrap;
+  font-weight: 600; transition: all 0.15s;
+}
+#export-pdf-btn:hover { background: #3a72aa; }
+
+#add-pallet-popover {
+  display: none; position: fixed; top: 52px; right: 16px;
+  background: var(--panel); border: 1px solid var(--border2);
+  border-radius: 5px; padding: 14px 16px; z-index: 500;
+  width: 320px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+#add-pallet-popover.open { display: block; }
+#add-pallet-popover .section-title { margin-bottom: 8px; }
+
+/* ── PACKED PALLETS SUB-BAR ── */
+#subbar {
+  flex-shrink: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  display: flex; align-items: center; gap: 10px;
+  min-height: 36px;
+  position: relative; z-index: 40;
+}
+#subbar-label {
+  font-family: var(--mono); font-size: 9px; color: var(--muted);
+  letter-spacing: 2px; text-transform: uppercase; flex-shrink: 0;
+  white-space: nowrap;
+}
+#pallet-tabs {
+  display: flex; gap: 5px; align-items: center;
+  overflow-x: auto; flex: 1;
+}
+#pallet-tabs::-webkit-scrollbar { height: 3px; }
+#pallet-tabs::-webkit-scrollbar-thumb { background: var(--border2); }
+.ptab {
+  flex-shrink: 0; cursor: pointer; padding: 4px 10px; border-radius: 3px;
+  background: var(--surface2); border: 1px solid var(--border);
+  transition: all 0.15s; display: flex; align-items: center; gap: 6px;
+}
+.ptab:hover { border-color: var(--border2); }
+.ptab.active { border-color: var(--accent); background: var(--panel); }
+.ptab-num { font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--text); }
+.ptab-pct { font-family: var(--mono); font-size: 9px; color: var(--accent); }
+.ptab-items { font-family: var(--mono); font-size: 9px; color: var(--muted); }
+#subbar-total {
+  font-family: var(--mono); font-size: 9px; color: var(--muted);
+  letter-spacing: 1px; flex-shrink: 0; white-space: nowrap;
+  padding-left: 10px; border-left: 1px solid var(--border);
+}
+
+/* ── MANUAL PANEL ── */
+#manual-panel {
+  display: none;
+  position: absolute; top: 14px; left: 14px;
+  width: 260px;
+  background: var(--panel);
+  border: 1px solid rgba(74,143,212,0.5);
+  border-radius: 8px;
+  padding: 14px 14px 10px;
+  pointer-events: all;
+  z-index: 20;
+  overflow: hidden;
+  max-height: 0;
+  padding-top: 0; padding-bottom: 0;
+  opacity: 0;
+  transition: max-height 0.35s ease, opacity 0.25s ease, padding 0.3s ease;
+}
+#manual-panel.visible {
+  display: block;
+  max-height: 600px;
+  padding: 14px 14px 10px;
+  opacity: 1;
+}
+#manual-panel-title { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #4a8fd4; margin-bottom: 8px; }
+#manual-hint { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-bottom: 10px; line-height: 1.6; letter-spacing: 0.5px; }
+#manual-item-select { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; max-height: 224px; overflow-y: auto; }
+#manual-item-select::-webkit-scrollbar { width: 3px; }
+#manual-item-select::-webkit-scrollbar-thumb { background: rgba(74,143,212,0.4); border-radius: 2px; }
+.manual-item-btn { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 3px; cursor: pointer; transition: all 0.15s; }
+.manual-item-btn:hover { border-color: #4a8fd4; }
+.manual-item-btn.active { border-color: #4a8fd4; background: rgba(74,143,212,0.15); }
+.manual-item-btn.depleted { opacity: 0.4; cursor: not-allowed; }
+.manual-item-dot { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+.manual-item-name { font-family: var(--mono); font-size: 9px; color: var(--text); flex: 1; }
+.manual-item-remain { font-family: var(--mono); font-size: 9px; color: var(--accent); }
+.manual-orient-label { font-size: 10px; color: var(--muted); font-family: var(--mono); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+#manual-orient-row { display: flex; gap: 5px; margin-bottom: 8px; flex-wrap: wrap; }
+.orient-btn { font-family: var(--mono); font-size: 10px; padding: 4px 8px; border: 1px solid var(--border2); background: var(--surface2); color: var(--muted); cursor: pointer; border-radius: 3px; transition: all 0.15s; }
+.orient-btn.active { border-color: #4a8fd4; color: #4a8fd4; background: rgba(74,143,212,0.15); }
+#manual-undo-btn { width: 100%; }
+
+#company-overlay { position: absolute; top: 14px; left: 14px; pointer-events: none; }
+#company-sub { font-family: var(--sans); font-size: 13px; color: var(--muted); letter-spacing: 1px; margin-top: 50px; }
+#company-name { font-family: var(--mono); font-size: 18px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: var(--accent); text-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+#pallet-type-overlay { position: absolute; top: 14px; right: 14px; pointer-events: none; text-align: right; text-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+#pallet-type-overlay .ct-label { font-family: var(--mono); font-size: 9px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
+#pallet-type-overlay .ct-name { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; }
+#pallet-type-overlay .ct-dims { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 2px; }
+#dev-overlay { position: absolute; bottom: 30px; right: 14px; pointer-events: none; text-align: right; font-family: var(--mono); font-size: 10px; color: var(--muted); line-height: 1.7; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+
+#viewport-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; min-width: 0; }
+#viewport { flex: 1; position: relative; overflow: hidden; cursor: grab; }
+#viewport.grabbing { cursor: grabbing; }
+
+#hscroll-bar { height: 14px; background: var(--surface2); border-top: 1px solid var(--border); position: relative; flex-shrink: 0; }
+#hscroll-thumb { position: absolute; top: 2px; height: 10px; background: var(--border2); border-radius: 5px; cursor: pointer; min-width: 40px; transition: background 0.15s; }
+#hscroll-thumb:hover, #hscroll-thumb.dragging { background: var(--muted); }
+#vscroll-bar { width: 14px; background: var(--surface2); border-left: 1px solid var(--border); position: relative; flex-shrink: 0; }
+#vscroll-thumb { position: absolute; left: 2px; width: 10px; background: var(--border2); border-radius: 5px; cursor: pointer; min-height: 40px; transition: background 0.15s; }
+#vscroll-thumb:hover, #vscroll-thumb.dragging { background: var(--muted); }
+
+#viewport-row { display: flex; flex: 1; overflow: hidden; }
+#main-row { display: flex; flex: 1; overflow: hidden; }
+canvas#three { display: block; width: 100% !important; height: 100% !important; }
+
+#sidebar { width: 300px; flex-shrink: 0; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+#sidebar-header { padding: 16px 18px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+#sidebar-header h1 { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase; color: var(--accent); }
+#sidebar-header p { font-size: 11px; color: var(--muted); margin-top: 3px; font-family: var(--mono); }
+#sidebar-scroll { flex: 1; overflow-y: auto; }
+#sidebar-scroll::-webkit-scrollbar { width: 3px; }
+#sidebar-scroll::-webkit-scrollbar-thumb { background: var(--border2); }
+
+#stats-overlay { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 8px; width: 240px; }
+.stat-ov-cell {}
+.stat-ov-label { font-size: 8px; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; font-family: var(--mono); }
+.stat-ov-val { font-size: 20px; font-weight: 700; font-family: var(--mono); color: var(--accent); margin: 1px 0 3px; }
+.stat-ov-val.warn { color: var(--red); }
+.stat-ov-val.good { color: var(--green); }
+.stat-ov-bar { height: 2px; background: rgba(255,255,255,0.1); width: 100%; }
+.stat-ov-fill { height: 2px; background: var(--accent); transition: width 0.4s ease; }
+.stat-ov-fill.warn { background: var(--red); }
+.stat-ov-fill.good { background: var(--green); }
+
+.section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.section-title { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); font-family: var(--mono); margin-bottom: 10px; }
+
+select, input[type=text], input[type=number] { width: 100%; background: var(--surface2); border: 1px solid var(--border2); color: var(--text); font-family: var(--mono); font-size: 11px; padding: 7px 10px; outline: none; appearance: none; -webkit-appearance: none; border-radius: 3px; }
+select:focus, input:focus { border-color: var(--accent); }
+select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; cursor: pointer; }
+
+#manifest-list { height: 212px; overflow-y: auto; }
+#manifest-list::-webkit-scrollbar { width: 3px; }
+#manifest-list::-webkit-scrollbar-thumb { background: var(--border2); }
+.manifest-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin-bottom: 3px; background: var(--surface); border: 1px solid var(--border); border-radius: 3px; }
+.manifest-badge { flex-shrink: 0; width: 72px; height: 36px; border-radius: 3px; border: 1.5px solid rgba(0,0,0,0.22); box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.18); display: flex; align-items: center; justify-content: center; padding: 2px 5px; overflow: hidden; }
+.manifest-badge-text { font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; text-align: center; line-height: 1.3; word-break: break-word; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.manifest-info { flex: 1; min-width: 0; }
+.manifest-dims { font-size: 9px; color: var(--muted); font-family: var(--mono); }
+.manifest-qty { font-size: 10px; color: var(--accent); font-family: var(--mono); flex-shrink: 0; }
+.manifest-del { color: var(--muted); cursor: pointer; font-size: 13px; flex-shrink: 0; padding: 0 2px; line-height: 1; }
+.manifest-del:hover { color: var(--red); }
+.empty-msg { color: var(--muted); font-size: 10px; font-family: var(--mono); text-align: center; padding: 16px 0; }
+
+.form-row { display: flex; gap: 6px; margin-bottom: 7px; }
+.form-field { flex: 1; }
+.form-field label { display: block; font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; font-family: var(--mono); margin-bottom: 3px; }
+input[type=color] { width: 40px; height: 30px; padding: 2px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 3px; cursor: pointer; flex-shrink: 0; }
+
+.btn { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; border: none; background: #4a7fa8; color: #fff; padding: 7px 12px; cursor: pointer; border-radius: 4px; transition: all 0.15s; white-space: nowrap; font-weight: 600; }
+.btn:hover { background: #5a92be; }
+.btn.primary { background: var(--accent2); color: #fff; font-weight: 700; }
+.btn.primary:hover { background: var(--accent); }
+.btn.danger { background: #b84040; color: #fff; }
+.btn.danger:hover { background: #d05050; }
+.btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn-row .btn { flex: 1; text-align: center; }
+
+.preset-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip { font-family: var(--mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase; padding: 4px 9px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); cursor: pointer; border-radius: 2px; transition: all 0.15s; }
+.chip:hover { color: var(--text); border-color: var(--border2); }
+.chip.sample { border-color: var(--accent2); color: var(--accent); }
+.chip.sample:hover { background: var(--accent2); color: #fff; }
+
+#cam-hint { position: absolute; bottom: 14px; left: 14px; font-family: var(--mono); font-size: 9px; color: var(--muted); letter-spacing: 1px; pointer-events: none; line-height: 1.8; }
+#cam-hint span { color: var(--accent); }
+
+#warn-overlay { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--red); background: rgba(10,12,18,0.88); border: 2px solid var(--red); border-radius: 6px; padding: 10px 22px; pointer-events: none; white-space: nowrap; display: none; z-index: 30; letter-spacing: 1px; }
+#warn-overlay:not(:empty) { display: block; }
+
+#mode-toggle-row { display: flex; gap: 6px; }
+.mode-btn { flex: 1; font-family: var(--mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 8px 10px; border-radius: 4px; cursor: pointer; border: 1px solid var(--border2); background: var(--surface2); color: var(--muted); text-align: center; transition: all 0.15s; font-weight: 600; }
+.mode-btn:hover { border-color: #4a8fd4; color: #4a8fd4; }
+.mode-btn.active { background: #4a8fd4; border-color: #4a8fd4; color: #fff; font-weight: 700; }
+
+.upright-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; cursor: pointer; user-select: none; }
+.upright-track { width: 28px; height: 15px; border-radius: 8px; background: var(--surface2); border: 1px solid var(--border2); position: relative; flex-shrink: 0; transition: background 0.2s; }
+.upright-track.on { background: var(--accent2); border-color: var(--accent); }
+.upright-thumb { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); position: absolute; top: 2px; left: 2px; transition: left 0.2s, background 0.2s; }
+.upright-track.on .upright-thumb { left: 15px; background: #fff; }
+.upright-label { font-size: 9px; color: var(--muted); font-family: var(--mono); letter-spacing: 1px; text-transform: uppercase; }
+.upright-track.on + .upright-label { color: var(--accent); }
+.manifest-tag { font-size: 8px; font-family: var(--mono); padding: 1px 5px; border-radius: 2px; background: var(--surface2); border: 1px solid var(--border2); color: var(--muted); flex-shrink: 0; }
+.manifest-tag.upright { background: rgba(76,173,114,0.1); border-color: var(--accent2); color: var(--accent); }
+
+/* ── LIGHT THEME ── */
+html.light {
+  --bg: #f0ede8; --panel: #faf8f5; --surface: #edeae4; --surface2: #e4e0d8;
+  --border: rgba(0,0,0,0.08); --border2: rgba(0,0,0,0.15);
+  --text: #1e2028; --muted: #8a8e99;
+  --accent: #2e8a52; --accent2: #1a6b3e;
+  --green: #2e8a52; --red: #b84040; --blue: #2a6aaa;
+}
+html.light select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E"); }
+#theme-toggle { margin-left: auto; display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+#theme-toggle-track { width: 32px; height: 17px; border-radius: 9px; background: var(--surface2); border: 1px solid var(--border2); position: relative; transition: background 0.2s; flex-shrink: 0; }
+#theme-toggle-thumb { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); position: absolute; top: 2px; left: 2px; transition: left 0.2s; }
+html.light #theme-toggle-thumb { left: 17px; }
+#theme-toggle-label { font-family: var(--mono); font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+@keyframes fadeUp { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: none; } }
+#sidebar { animation: fadeUp 0.3s ease; }
+*, *::before, *::after { transition: background-color 0.25s ease, border-color 0.25s ease, color 0.15s ease; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TOP BAR: Pallet type selector -->
+  <div id="topbar">
+    <div id="topbar-title">Pallet</div>
+    <div id="pallet-type-cards"></div>
+    <button id="add-pallet-btn" onclick="toggleAddPalletPopover()">+ Custom</button>
+    <button id="sample-load-btn" onclick="loadSample()">▶ Sample Load</button>
+    <button id="export-pdf-btn" onclick="exportPDF()">⬇ Export PDF</button>
+    <div id="add-pallet-popover">
+      <div class="section-title">Add Custom Pallet</div>
+      <div class="form-row">
+        <div class="form-field"><label>Name</label><input type="text" id="cName" value="Custom Pallet" maxlength="18"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>L (cm)</label><input type="number" id="cL" value="120" min="1"></div>
+        <div class="form-field"><label>W (cm)</label><input type="number" id="cW" value="80" min="1"></div>
+        <div class="form-field"><label>Max H (cm)</label><input type="number" id="cH" value="180" min="1"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>Max Weight (kg)</label><input type="number" id="cKg" value="1000" min="1"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="addPalletType()">+ Add Pallet</button>
+        <button class="btn danger" onclick="toggleAddPalletPopover()">Cancel</button>
+      </div>
+    </div>
+    <div id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme">
+      <div id="theme-toggle-track"><div id="theme-toggle-thumb"></div></div>
+      <span id="theme-toggle-label">Light</span>
+    </div>
+  </div>
+
+  <!-- PACKED PALLETS SUB-BAR -->
+  <div id="subbar">
+    <span id="subbar-label">PACKED PALLETS:</span>
+    <div id="pallet-tabs"><span style="font-family:var(--mono);font-size:9px;color:var(--muted);padding:0 6px;">— pack items to see pallet result —</span></div>
+    <div id="subbar-total"></div>
+  </div>
+
+  <!-- MAIN ROW -->
+  <div id="main-row">
+    <div id="viewport-wrap">
+      <div id="viewport-row">
+        <div id="viewport">
+          <canvas id="three"></canvas>
+          <div id="cam-hint">
+            <span>drag</span> rotate &nbsp;·&nbsp; <span>scroll</span> zoom &nbsp;·&nbsp; <span>right-drag</span> pan
+          </div>
+          <div id="warn-overlay"></div>
+          <!-- MANUAL PANEL OVERLAY -->
+          <div id="manual-panel">
+            <div id="manual-panel-title">✋ Manual Loading</div>
+            <div id="manual-hint">Select item · hover to preview · click to place · R to rotate · ESC to deselect</div>
+            <div id="manual-item-select"></div>
+            <div class="manual-orient-label">ORIENTATION</div>
+            <div id="manual-orient-row"></div>
+            <button class="btn danger" id="manual-undo-btn" onclick="manualUndo()">↩ Undo Last</button>
+          </div>
+          <div id="company-overlay">
+            <div id="company-name">DEMO LOGISTICS</div>
+            <div id="company-sub">Pallet Loading Plan</div>
+            <p id="pallet-dims" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:4px;">120 × 80 cm · max 180 cm · 1,000 kg</p>
+            <div id="stats-overlay">
+              <div class="stat-ov-cell">
+                <div class="stat-ov-label">Height</div>
+                <div class="stat-ov-val" id="sv">0%</div>
+                <div class="stat-ov-bar"><div class="stat-ov-fill" id="sv-bar" style="width:0%"></div></div>
+              </div>
+              <div class="stat-ov-cell">
+                <div class="stat-ov-label">Weight</div>
+                <div class="stat-ov-val" id="sw">0%</div>
+                <div class="stat-ov-bar"><div class="stat-ov-fill" id="sw-bar" style="width:0%"></div></div>
+              </div>
+              <div class="stat-ov-cell">
+                <div class="stat-ov-label">Items</div>
+                <div class="stat-ov-val" id="si">0/0</div>
+                <div class="stat-ov-bar"><div class="stat-ov-fill" id="si-bar" style="width:0%"></div></div>
+              </div>
+            </div>
+          </div>
+          <div id="pallet-type-overlay"></div>
+          <div id="dev-overlay">
+            <div>Developed by Komsan Kongsuwan</div>
+            <div><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="771c181a041619591c181910040200161937101a161e1b5914181a">[email&#160;protected]</a></div>
+            <div>+66-81-723-9680</div>
+          </div>
+        </div>
+        <div id="vscroll-bar"><div id="vscroll-thumb"></div></div>
+      </div>
+      <div id="hscroll-bar"><div id="hscroll-thumb"></div></div>
+    </div>
+
+    <div id="sidebar">
+    <div id="sidebar-scroll">
+      <div class="section">
+        <div class="section-title">Cargo Manifest</div>
+        <div id="manifest-list"><div class="empty-msg">— no items added —</div></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Add Item</div>
+        <div class="form-row">
+          <div class="form-field" style="flex:2">
+            <label>Name</label>
+            <input type="text" id="inName" value="Carton" maxlength="20">
+          </div>
+          <div>
+            <label style="display:block;font-size:9px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-family:var(--mono);margin-bottom:3px;">Color</label>
+            <input type="color" id="inColor" value="#4cad72">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field"><label>L (cm)</label><input type="number" id="inL" value="40" min="1"></div>
+          <div class="form-field"><label>W (cm)</label><input type="number" id="inW" value="30" min="1"></div>
+          <div class="form-field"><label>H (cm)</label><input type="number" id="inH" value="30" min="1"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-field"><label>Weight (kg)</label><input type="number" id="inWt" value="10" min="0"></div>
+          <div class="form-field"><label>Quantity</label><input type="number" id="inQty" value="1" min="1" max="500"></div>
+        </div>
+        <div class="upright-row" onclick="toggleUprightInput()">
+          <div class="upright-track" id="uprightTrack"><div class="upright-thumb"></div></div>
+          <span class="upright-label" id="uprightLabel">Upright only (no flipping)</span>
+        </div>
+        <div class="btn-row">
+          <button class="btn" style="background:#2e7d52;color:#fff;" onclick="addItem()">+ Add to Manifest</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Presets</div>
+        <div class="preset-chips">
+          <div class="chip sample" onclick="usePreset('carton_s')">Carton S</div>
+          <div class="chip sample" onclick="usePreset('carton_m')">Carton M</div>
+          <div class="chip sample" onclick="usePreset('carton_l')">Carton L</div>
+          <div class="chip sample" onclick="usePreset('box_heavy')">Heavy Box</div>
+          <div class="chip sample" onclick="usePreset('drum')">Drum</div>
+          <div class="chip sample" onclick="usePreset('crate')">Crate</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div id="mode-toggle-row">
+          <button class="mode-btn active" id="mode-auto-btn" onclick="setMode('auto')">⚡ Auto Pack</button>
+          <button class="mode-btn" id="mode-manual-btn" onclick="setMode('manual')">✋ Manual Load</button>
+        </div>
+      </div>
+
+      <div id="auto-panel" class="section">
+        <div class="btn-row">
+          <button class="btn primary" onclick="packAll()">▶ Pack Pallets</button>
+          <button class="btn danger" onclick="clearAll()">✕ Clear</button>
+        </div>
+        <div id="fail-msg" style="display:none"></div>
+      </div>
+
+    </div>
+    </div>
+  </div><!-- /#main-row -->
+</div>
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+// ── PALLET TYPES ─────────────────────────────────────────────────────────────
+const STANDARD_KEYS = new Set(['euro','us','iso','half','chep']);
+const PALLETS = {
+  'euro': { label:'Euro Pallet',   L:120,   W:80,    H:180, maxKg:1000, palletH:14.4 },
+  'us':   { label:'US Standard',   L:121.9, W:101.6, H:180, maxKg:1200, palletH:15   },
+  'iso':  { label:'US ISO',        L:110,   W:110,   H:180, maxKg:1200, palletH:15   },
+  'half': { label:'Half Pallet',   L:80,    W:60,    H:120, maxKg:500,  palletH:12   },
+  'chep': { label:'CHEP Pallet',   L:120,   W:100,   H:180, maxKg:1500, palletH:15   },
+};
+let customPalletIdx = 1;
+
+function renderPalletTypeCards() {
+  const el = document.getElementById('pallet-type-cards');
+  el.innerHTML = Object.entries(PALLETS).map(([key, p]) => {
+    const isActive = key === currentPKey;
+    const isLocked = STANDARD_KEYS.has(key);
+    return `<div class="ccard${isActive?' active':''}" onclick="changePallet('${key}')">
+      <div style="display:flex;align-items:center;gap:4px;">
+        <span class="ccard-name">${p.label}</span>
+        ${isLocked
+          ? `<span style="font-size:9px;color:var(--border2);margin-left:4px;" title="Standard">🔒</span>`
+          : `<span class="ccard-del" onclick="event.stopPropagation();removePalletType('${key}')" title="Remove">✕</span>`}
+      </div>
+      <div class="ccard-dims">${p.L}×${p.W}cm · H${p.H} · ${p.maxKg}kg</div>
+    </div>`;
+  }).join('');
+}
+
+function toggleAddPalletPopover() {
+  document.getElementById('add-pallet-popover').classList.toggle('open');
+}
+
+// ── PRESETS ───────────────────────────────────────────────────────────────────
+const PRESETS = {
+  carton_s:  { name:'Carton S',   l:30, w:20, h:20, weight:5,  color:'#4cad72', upright:false },
+  carton_m:  { name:'Carton M',   l:40, w:30, h:30, weight:10, color:'#4a8fd4', upright:false },
+  carton_l:  { name:'Carton L',   l:60, w:40, h:40, weight:18, color:'#a87fd4', upright:false },
+  box_heavy: { name:'Heavy Box',  l:50, w:40, h:35, weight:28, color:'#c8a040', upright:false },
+  drum:      { name:'Drum',       l:58, w:58, h:85, weight:80, color:'#d46060', upright:true  },
+  crate:     { name:'Crate',      l:80, w:60, h:60, weight:40, color:'#f0c040', upright:false },
+};
+const PALETTE = ['#4cad72','#4a8fd4','#d46060','#a87fd4','#c8a040','#f0c040','#d48860','#60a8d4','#80c870','#6ab4d4'];
+
+let currentPKey = 'euro';
+let cargoItems = [];
+let allPallets = [];       // array of box arrays, one per packed pallet
+let currentPalletIdx = 0;
+let packedBoxes = [];      // = allPallets[currentPalletIdx] or []
+let itemId = 0;
+let palIdx = 1;
+
+// ── THREE.JS SETUP ───────────────────────────────────────────────────────────
+const canvas = document.getElementById('three');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.LinearToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.setClearColor(0x0e0f11);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 4000);
+
+const orbit = { theta: -0.6, phi: 0.45, radius: 400, target: new THREE.Vector3() };
+
+function updateCamera() {
+  const phi = Math.max(0.05, Math.min(Math.PI/2 - 0.01, orbit.phi));
+  camera.position.set(
+    orbit.target.x + orbit.radius * Math.sin(phi) * Math.sin(orbit.theta),
+    orbit.target.y + orbit.radius * Math.cos(phi),
+    orbit.target.z + orbit.radius * Math.sin(phi) * Math.cos(orbit.theta)
+  );
+  camera.lookAt(orbit.target);
+}
+
+let dragState = null;
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('mousedown', e => {
+  document.getElementById('viewport').classList.add('grabbing');
+  dragState = { button: e.button, x: e.clientX, y: e.clientY, theta: orbit.theta, phi: orbit.phi, tx: orbit.target.x, ty: orbit.target.y, tz: orbit.target.z };
+});
+window.addEventListener('mouseup', () => { dragState = null; document.getElementById('viewport').classList.remove('grabbing'); });
+window.addEventListener('mousemove', e => {
+  if (!dragState) return;
+  const dx = e.clientX - dragState.x, dy = e.clientY - dragState.y;
+  if (dragState.button === 0) {
+    orbit.theta = dragState.theta - dx * 0.008;
+    orbit.phi = Math.max(0.05, Math.min(1.5, dragState.phi - dy * 0.006));
+  } else if (dragState.button === 2) {
+    const panSpeed = orbit.radius * 0.001;
+    const right = new THREE.Vector3();
+    right.crossVectors(new THREE.Vector3(0,1,0), new THREE.Vector3().subVectors(camera.position, orbit.target)).normalize();
+    orbit.target.x = dragState.tx + right.x * dx * panSpeed;
+    orbit.target.y = dragState.ty + dy * panSpeed * 0.6;
+    orbit.target.z = dragState.tz + right.z * dx * panSpeed;
+  }
+  updateCamera();
+  updateScrollbars();
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  orbit.radius = Math.max(30, Math.min(2000, orbit.radius * (1 + e.deltaY * 0.001)));
+  updateCamera();
+  updateScrollbars();
+}, { passive: false });
+
+// ── SCROLLBARS ────────────────────────────────────────────────────────────────
+const PAN_H_RANGE = 500;
+const PAN_V_RANGE = 300;
+
+function updateScrollbars() {
+  const hBar = document.getElementById('hscroll-bar');
+  const hThumb = document.getElementById('hscroll-thumb');
+  const vBar = document.getElementById('vscroll-bar');
+  const vThumb = document.getElementById('vscroll-thumb');
+  if (!hBar || !vBar) return;
+  const hBarW = hBar.clientWidth;
+  const vBarH = vBar.clientHeight;
+  const hThumbW = Math.max(40, hBarW * 0.25);
+  const hTrack = hBarW - hThumbW;
+  const hPct = (orbit.target.x + PAN_H_RANGE) / (PAN_H_RANGE * 2);
+  hThumb.style.width = hThumbW + 'px';
+  hThumb.style.left = Math.max(0, Math.min(hTrack, hPct * hTrack)) + 'px';
+  const vThumbH = Math.max(40, vBarH * 0.25);
+  const vTrack = vBarH - vThumbH;
+  const vPct = 1 - (orbit.target.y + PAN_V_RANGE) / (PAN_V_RANGE * 2);
+  vThumb.style.height = vThumbH + 'px';
+  vThumb.style.top = Math.max(0, Math.min(vTrack, vPct * vTrack)) + 'px';
+}
+
+function initScrollbars() {
+  const hBar = document.getElementById('hscroll-bar');
+  const hThumb = document.getElementById('hscroll-thumb');
+  const vBar = document.getElementById('vscroll-bar');
+  const vThumb = document.getElementById('vscroll-thumb');
+  let hDrag = null, vDrag = null;
+
+  hThumb.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    hDrag = { startX: e.clientX, startPan: orbit.target.x };
+    hThumb.classList.add('dragging');
+  });
+  hBar.addEventListener('click', e => {
+    if (e.target === hThumb) return;
+    const rect = hBar.getBoundingClientRect();
+    const pct = (e.clientX - rect.left) / rect.width;
+    orbit.target.x = Math.max(-PAN_H_RANGE, Math.min(PAN_H_RANGE, (pct * 2 - 1) * PAN_H_RANGE));
+    updateCamera(); updateScrollbars();
+  });
+  vThumb.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    vDrag = { startY: e.clientY, startPan: orbit.target.y };
+    vThumb.classList.add('dragging');
+  });
+  vBar.addEventListener('click', e => {
+    if (e.target === vThumb) return;
+    const rect = vBar.getBoundingClientRect();
+    const pct = 1 - (e.clientY - rect.top) / rect.height;
+    orbit.target.y = Math.max(-PAN_V_RANGE, Math.min(PAN_V_RANGE, (pct * 2 - 1) * PAN_V_RANGE));
+    updateCamera(); updateScrollbars();
+  });
+  window.addEventListener('mousemove', e => {
+    if (hDrag) {
+      const dx = e.clientX - hDrag.startX;
+      const hTrack = hBar.clientWidth - hThumb.clientWidth;
+      orbit.target.x = Math.max(-PAN_H_RANGE, Math.min(PAN_H_RANGE, hDrag.startPan + (dx/hTrack)*PAN_H_RANGE*2));
+      updateCamera(); updateScrollbars();
+    }
+    if (vDrag) {
+      const dy = e.clientY - vDrag.startY;
+      const vTrack = vBar.clientHeight - vThumb.clientHeight;
+      orbit.target.y = Math.max(-PAN_V_RANGE, Math.min(PAN_V_RANGE, vDrag.startPan - (dy/vTrack)*PAN_V_RANGE*2));
+      updateCamera(); updateScrollbars();
+    }
+  });
+  window.addEventListener('mouseup', () => {
+    if (hDrag) { hThumb.classList.remove('dragging'); hDrag = null; }
+    if (vDrag) { vThumb.classList.remove('dragging'); vDrag = null; }
+  });
+  updateScrollbars();
+}
+
+let touches = [];
+canvas.addEventListener('touchstart', e => { touches = [...e.touches]; }, { passive: true });
+canvas.addEventListener('touchmove', e => {
+  if (e.touches.length === 1 && touches.length === 1) {
+    const dx = e.touches[0].clientX - touches[0].clientX;
+    const dy = e.touches[0].clientY - touches[0].clientY;
+    orbit.theta -= dx * 0.008; orbit.phi = Math.max(0.05, Math.min(1.5, orbit.phi - dy * 0.006));
+    updateCamera();
+  } else if (e.touches.length === 2 && touches.length === 2) {
+    const d1 = Math.hypot(touches[0].clientX-touches[1].clientX, touches[0].clientY-touches[1].clientY);
+    const d2 = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+    orbit.radius = Math.max(30, Math.min(2000, orbit.radius * (d1/d2)));
+    updateCamera();
+  }
+  touches = [...e.touches];
+}, { passive: true });
+
+// ── LIGHTING ─────────────────────────────────────────────────────────────────
+const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambient);
+const dirLight = new THREE.DirectionalLight(0xfff5e0, 1.2);
+dirLight.position.set(200, 400, 200);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 2048; dirLight.shadow.mapSize.height = 2048;
+dirLight.shadow.camera.near = 0.5; dirLight.shadow.camera.far = 1500;
+dirLight.shadow.bias = -0.001;
+scene.add(dirLight);
+const fillLight = new THREE.DirectionalLight(0x8cb0d0, 0.3);
+fillLight.position.set(-200, 100, -150);
+scene.add(fillLight);
+const hemi = new THREE.HemisphereLight(0x222830, 0x080808, 0.5);
+scene.add(hemi);
+
+// ── SCENE GROUPS ─────────────────────────────────────────────────────────────
+const gridGroup = new THREE.Group();
+scene.add(gridGroup);
+const palletGroup = new THREE.Group();
+scene.add(palletGroup);
+const boxGroup = new THREE.Group();
+scene.add(boxGroup);
+const dimGroup = new THREE.Group();
+scene.add(dimGroup);
+
+function buildGrid(p) {
+  while (gridGroup.children.length) gridGroup.remove(gridGroup.children[0]);
+  const size = Math.max(p.L, p.W) * 5;
+  const gridHelper = new THREE.GridHelper(size, 24, 0x1e2028, 0x1a1d22);
+  gridHelper.position.y = -(p.palletH || 14.4);
+  gridGroup.add(gridHelper);
+}
+
+// ── BUILD PALLET STRUCTURE ────────────────────────────────────────────────────
+function buildPallet(p) {
+  while (palletGroup.children.length) palletGroup.remove(palletGroup.children[0]);
+
+  const L = p.L, W = p.W, pH = p.palletH || 14.4;
+  const hw = L/2, hd = W/2;
+
+  const woodMat  = new THREE.MeshStandardMaterial({ color: 0xc4a464, roughness: 0.9, metalness: 0.0 });
+  const darkMat  = new THREE.MeshStandardMaterial({ color: 0x8b6830, roughness: 0.9, metalness: 0.0 });
+
+  // --- Top deck boards (running in Z / width direction) ---
+  const topBH = 2.4;
+  const numBoards = 7;
+  const boardGapL = L / numBoards;
+  const boardThick = boardGapL * 0.68;
+  for (let i = 0; i < numBoards; i++) {
+    const bx = (i / (numBoards-1) - 0.5) * (L - boardThick);
+    const geo = new THREE.BoxGeometry(boardThick, topBH, W);
+    const m = new THREE.Mesh(geo, woodMat.clone());
+    m.position.set(bx, -topBH/2, 0);
+    m.receiveShadow = true;
+    palletGroup.add(m);
+  }
+
+  // --- 3 Stringers running in X / length direction ---
+  const stringerH = pH - topBH - 4.8;
+  const stringerW = Math.min(14, W * 0.14);
+  const stringerPosZ = [0, -hd + stringerW/2, hd - stringerW/2];
+  for (const sz of stringerPosZ) {
+    const geo = new THREE.BoxGeometry(L, stringerH, stringerW);
+    const m = new THREE.Mesh(geo, darkMat.clone());
+    m.position.set(0, -topBH - stringerH/2, sz);
+    m.castShadow = true; m.receiveShadow = true;
+    palletGroup.add(m);
+  }
+
+  // --- 3 Bottom boards (running in Z / width direction) ---
+  const botBH = 4.8;
+  const botW = Math.min(boardThick * 2, L / 3 * 0.75);
+  for (let i = 0; i < 3; i++) {
+    const bx = (i / 2 - 0.5) * (L - botW);
+    const geo = new THREE.BoxGeometry(botW, botBH, W);
+    const m = new THREE.Mesh(geo, woodMat.clone());
+    m.position.set(bx, -pH + botBH/2, 0);
+    m.castShadow = true; m.receiveShadow = true;
+    palletGroup.add(m);
+  }
+
+  // --- Pallet edge outline at floor level ---
+  const edge = new THREE.LineSegments(
+    (() => {
+      const pts = [
+        -hw,0,-hd, hw,0,-hd,  hw,0,-hd, hw,0,hd,
+         hw,0, hd,-hw,0, hd, -hw,0, hd,-hw,0,-hd
+      ];
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      return g;
+    })(),
+    new THREE.LineBasicMaterial({ color: 0x5a8050, opacity: 0.6, transparent: true })
+  );
+  edge.position.y = 0.2;
+  palletGroup.add(edge);
+
+  // --- Max-height guide lines (corner posts + top frame) ---
+  const guideH = p.H;
+  const guidePts = [
+    -hw,0,-hd, -hw,guideH,-hd,  hw,0,-hd, hw,guideH,-hd,
+     hw,0, hd,  hw,guideH, hd, -hw,0, hd,-hw,guideH, hd,
+    -hw,guideH,-hd, hw,guideH,-hd,  hw,guideH,-hd, hw,guideH,hd,
+     hw,guideH, hd,-hw,guideH, hd, -hw,guideH,hd,-hw,guideH,-hd
+  ];
+  const guideGeo = new THREE.BufferGeometry();
+  guideGeo.setAttribute('position', new THREE.Float32BufferAttribute(guidePts, 3));
+  palletGroup.add(new THREE.LineSegments(guideGeo,
+    new THREE.LineBasicMaterial({ color: 0x2a3a28, opacity: 0.5, transparent: true })
+  ));
+
+  // --- Ground plane ---
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(L*5, W*5),
+    new THREE.MeshStandardMaterial({ color: 0x141620, roughness: 1.0 })
+  );
+  ground.rotation.x = -Math.PI/2;
+  ground.position.y = -pH;
+  ground.receiveShadow = true;
+  palletGroup.add(ground);
+
+  buildGrid(p);
+  buildDimensions(p);
+  boxGroup.position.set(-hw, 0, -hd);
+
+  // Camera
+  const diag = Math.sqrt(L*L + W*W + p.H*p.H);
+  orbit.radius = diag * 1.5;
+  orbit.target.set(0, p.H * 0.28, 0);
+  orbit.theta = 0.8; orbit.phi = 1.0;
+  updateCamera();
+
+  // Shadow camera
+  dirLight.shadow.camera.left = -L*1.5; dirLight.shadow.camera.right = L*1.5;
+  dirLight.shadow.camera.top = p.H*2; dirLight.shadow.camera.bottom = -p.H;
+  dirLight.shadow.camera.far = diag*3;
+  dirLight.shadow.camera.updateProjectionMatrix();
+}
+
+// ── DIMENSION ANNOTATIONS ─────────────────────────────────────────────────────
+function makeDimSprite(text, hexColor) {
+  const cw = 256, ch = 80;
+  const cv = document.createElement('canvas');
+  cv.width = cw; cv.height = ch;
+  const ctx = cv.getContext('2d');
+
+  // Background pill
+  ctx.fillStyle = hexColor;
+  const r = 20;
+  ctx.beginPath();
+  ctx.moveTo(r, 4); ctx.lineTo(cw-r, 4);
+  ctx.quadraticCurveTo(cw-4, 4, cw-4, r);
+  ctx.lineTo(cw-4, ch-r);
+  ctx.quadraticCurveTo(cw-4, ch-4, cw-r, ch-4);
+  ctx.lineTo(r, ch-4);
+  ctx.quadraticCurveTo(4, ch-4, 4, ch-r);
+  ctx.lineTo(4, r);
+  ctx.quadraticCurveTo(4, 4, r, 4);
+  ctx.closePath();
+  ctx.fill();
+
+  // Text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 34px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, cw / 2, ch / 2);
+
+  const tex = new THREE.CanvasTexture(cv);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.renderOrder = 999;
+  return sprite;
+}
+
+function addDimAnnotation(group, ax, ay, az, bx, by, bz, label, hexColor, tickDir) {
+  const linePts = [ax, ay, az, bx, by, bz];
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(linePts, 3));
+  const lineMat = new THREE.LineBasicMaterial({ color: hexColor, transparent: true, opacity: 0.85, depthTest: false });
+  const line = new THREE.Line(lineGeo, lineMat);
+  line.renderOrder = 998;
+  group.add(line);
+
+  // Extension / tick lines at each end
+  const tk = tickDir;
+  const tickLen = Math.max((Math.abs(bx-ax) + Math.abs(by-ay) + Math.abs(bz-az)) * 0.08, 3);
+  for (const [ox, oy, oz] of [[ax, ay, az], [bx, by, bz]]) {
+    const tPts = [
+      ox - tk[0]*tickLen, oy - tk[1]*tickLen, oz - tk[2]*tickLen,
+      ox + tk[0]*tickLen, oy + tk[1]*tickLen, oz + tk[2]*tickLen
+    ];
+    const tGeo = new THREE.BufferGeometry();
+    tGeo.setAttribute('position', new THREE.Float32BufferAttribute(tPts, 3));
+    const tick = new THREE.Line(tGeo, lineMat.clone());
+    tick.renderOrder = 998;
+    group.add(tick);
+  }
+
+  // Arrow heads (small triangle lines)
+  const len = Math.sqrt((bx-ax)**2 + (by-ay)**2 + (bz-az)**2);
+  const dx = (bx-ax)/len, dy = (by-ay)/len, dz = (bz-az)/len;
+  const aLen = Math.max(len * 0.06, 2);
+  for (const [ox, oy, oz, sign] of [[ax, ay, az, 1], [bx, by, bz, -1]]) {
+    // Arrow along the dim line, spread using tick dir
+    const aPts = [
+      ox + sign*dx*aLen - tk[0]*aLen*0.5, oy + sign*dy*aLen - tk[1]*aLen*0.5, oz + sign*dz*aLen - tk[2]*aLen*0.5,
+      ox, oy, oz,
+      ox + sign*dx*aLen + tk[0]*aLen*0.5, oy + sign*dy*aLen + tk[1]*aLen*0.5, oz + sign*dz*aLen + tk[2]*aLen*0.5,
+    ];
+    const aGeo = new THREE.BufferGeometry();
+    aGeo.setAttribute('position', new THREE.Float32BufferAttribute(aPts, 3));
+    const arrow = new THREE.Line(aGeo, lineMat.clone());
+    arrow.renderOrder = 998;
+    group.add(arrow);
+  }
+
+  // Label sprite at midpoint
+  const sprite = makeDimSprite(label, hexColor);
+  sprite.position.set((ax+bx)/2, (ay+by)/2, (az+bz)/2);
+  const scale = Math.max(len * 0.22, 14);
+  sprite.scale.set(scale * 3.2, scale, 1);
+  group.add(sprite);
+}
+
+function buildDimensions(p) {
+  while (dimGroup.children.length) dimGroup.remove(dimGroup.children[0]);
+
+  const L = p.L, W = p.W, guideH = p.H;
+  const hw = L/2, hd = W/2;
+  const off = Math.max(L, W) * 0.22;   // offset distance from pallet face
+  const yBase = 0;                       // at deck level
+
+  // ── LENGTH (L) along front face (Z = +hd), offset further in Z
+  const lOff = hd + off;
+  addDimAnnotation(dimGroup,
+    -hw, yBase, lOff,
+     hw, yBase, lOff,
+    `L: ${L} cm`, '#2e8a52', [0, 1, 0]   // tick in Y direction
+  );
+  // Extension lines from pallet corners to dim line
+  for (const sx of [-hw, hw]) {
+    const extPts = [sx, yBase, hd+1, sx, yBase, lOff];
+    const eg = new THREE.BufferGeometry();
+    eg.setAttribute('position', new THREE.Float32BufferAttribute(extPts, 3));
+    dimGroup.add(new THREE.Line(eg, new THREE.LineBasicMaterial({ color: 0x2e8a52, transparent:true, opacity:0.35, depthTest:false })));
+  }
+
+  // ── WIDTH (W) along right face (X = +hw), offset further in X
+  const wOff = hw + off;
+  addDimAnnotation(dimGroup,
+    wOff, yBase, -hd,
+    wOff, yBase,  hd,
+    `W: ${W} cm`, '#4a8fd4', [0, 1, 0]
+  );
+  for (const sz of [-hd, hd]) {
+    const extPts = [hw+1, yBase, sz, wOff, yBase, sz];
+    const eg = new THREE.BufferGeometry();
+    eg.setAttribute('position', new THREE.Float32BufferAttribute(extPts, 3));
+    dimGroup.add(new THREE.Line(eg, new THREE.LineBasicMaterial({ color: 0x4a8fd4, transparent:true, opacity:0.35, depthTest:false })));
+  }
+
+  // ── HEIGHT (H) along the right-back edge, offset out in both X and Z
+  const hOff = hw + off * 0.55;
+  const hzOff = -(hd + off * 0.55);
+  addDimAnnotation(dimGroup,
+    hOff, 0,      hzOff,
+    hOff, guideH, hzOff,
+    `H: ${guideH} cm`, '#d46060', [1, 0, 0]
+  );
+  // Extension lines from top/bottom corner to height dim
+  for (const sy of [0, guideH]) {
+    const extPts = [hw, sy, -hd, hOff, sy, hzOff];
+    const eg = new THREE.BufferGeometry();
+    eg.setAttribute('position', new THREE.Float32BufferAttribute(extPts, 3));
+    dimGroup.add(new THREE.Line(eg, new THREE.LineBasicMaterial({ color: 0xd46060, transparent:true, opacity:0.35, depthTest:false })));
+  }
+}
+
+buildPallet(PALLETS['euro']);
+
+// ── BOX TEXTURES ─────────────────────────────────────────────────────────────
+function hexToInt(hex) { return parseInt(hex.replace('#',''), 16); }
+function rgbLighten(hex, amt) {
+  const c = parseInt(hex.replace('#',''), 16);
+  return (Math.min(255,((c>>16)&0xff)+amt)<<16)|(Math.min(255,((c>>8)&0xff)+amt)<<8)|Math.min(255,(c&0xff)+amt);
+}
+
+function drawCareMark(ctx, size, dark, angleDeg) {
+  const ink = dark ? 'rgba(255,255,255,0.82)' : 'rgba(0,0,0,0.72)';
+  const aw = 14, ah = 22, stemW = 7, stemH = 14;
+  let px, py;
+  if      (angleDeg ===   0) { px = size - 52; py = size - 52; }
+  else if (angleDeg ===  90) { px = 75;        py = size - 52; }
+  else if (angleDeg === -90) { px = size - 75; py = size - 52; }
+  else                       { px = 52;        py = 52 + 20;   }
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(angleDeg * Math.PI / 180);
+  ctx.fillStyle = ink;
+  ctx.beginPath();
+  ctx.moveTo(0, -ah); ctx.lineTo(-aw, 0); ctx.lineTo(-stemW/2, 0);
+  ctx.lineTo(-stemW/2, stemH); ctx.lineTo(stemW/2, stemH);
+  ctx.lineTo(stemW/2, 0); ctx.lineTo(aw, 0);
+  ctx.closePath(); ctx.fill();
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('THIS SIDE', 0, stemH + 4);
+  ctx.fillText('UP', 0, stemH + 16);
+  ctx.restore();
+}
+
+function makeBoxTexture(name, hexColor, arrowAngle, dimText, seqNum, weightText) {
+  const size = 256;
+  const cv = document.createElement('canvas');
+  cv.width = size; cv.height = size;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = hexColor;
+  ctx.fillRect(0, 0, size, size);
+  const c = parseInt(hexColor.replace('#',''), 16);
+  const lum = 0.299*((c>>16)&0xff) + 0.587*((c>>8)&0xff) + 0.114*(c&0xff);
+  const dark = lum < 140;
+  ctx.fillStyle = dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  ctx.fillRect(0, 0, size, size);
+  ctx.strokeStyle = dark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(8, 8, size-16, size-16);
+  const cs = 18; ctx.lineWidth = 4;
+  for (const [cx,cy,sx,sy] of [[10,10,1,1],[size-10,10,-1,1],[10,size-10,1,-1],[size-10,size-10,-1,-1]]) {
+    ctx.beginPath(); ctx.moveTo(cx, cy+sy*cs); ctx.lineTo(cx, cy); ctx.lineTo(cx+sx*cs, cy); ctx.stroke();
+  }
+  ctx.fillStyle = dark ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.78)';
+  const words = name.toUpperCase().split(' ');
+  const lines = []; let cur = '';
+  for (const w of words) {
+    ctx.font = 'bold 28px monospace';
+    const test = cur ? cur+' '+w : w;
+    if (ctx.measureText(test).width > size-36 && cur) { lines.push(cur); cur = w; } else cur = test;
+  }
+  if (cur) lines.push(cur);
+  const lineH = 34, totalH = lines.length * lineH;
+  const startY = (size - totalH) / 2;
+  ctx.font = 'bold 26px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  lines.forEach((line, i) => ctx.fillText(line, size/2, startY + i*lineH));
+  if (arrowAngle !== null) drawCareMark(ctx, size, dark, arrowAngle);
+  const bottomY = size - 22;
+  if (dimText) {
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillStyle = dark ? 'rgba(255,255,255,0.70)' : 'rgba(0,0,0,0.55)';
+    ctx.fillText(dimText, size / 2, bottomY);
+  }
+  if (weightText) {
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillStyle = dark ? 'rgba(255,255,255,0.70)' : 'rgba(0,0,0,0.55)';
+    ctx.fillText(weightText, 14, bottomY);
+  }
+  if (seqNum != null) {
+    const r = 22, cx2 = 36, cy2 = 36;
+    ctx.fillStyle = dark ? 'rgba(255,255,255,0.90)' : 'rgba(0,0,0,0.75)';
+    ctx.beginPath(); ctx.arc(cx2, cy2, r, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = dark ? '#000' : '#fff';
+    ctx.font = `bold ${seqNum > 99 ? 16 : 20}px monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(seqNum), cx2, cy2);
+  }
+  return new THREE.CanvasTexture(cv);
+}
+
+function makeMat(tex, color) {
+  return tex
+    ? new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55, metalness: 0.05 })
+    : new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.05 });
+}
+
+let animQueue = [];
+let animIdx = 0;
+const ANIM_DURATION = 480;
+const ANIM_GAP = 80;
+
+function renderBoxes(boxes) {
+  while (boxGroup.children.length) boxGroup.remove(boxGroup.children[0]);
+  animQueue = []; animIdx = 0;
+
+  const p = PALLETS[currentPKey];
+
+  // Sort bottom-up, back-to-front, left-to-right (stacking order)
+  const loadOrder = [...boxes].sort((a,b) => a.z-b.z || a.x-b.x || a.y-b.y);
+
+  for (let li = 0; li < loadOrder.length; li++) {
+    const box = loadOrder[li];
+    const geo = new THREE.BoxGeometry(box.l-0.8, box.h-0.8, box.w-0.8);
+    const colorInt = hexToInt(box.color);
+    const name = box.item.name;
+    const col = box.color;
+    const ih = box.item.h;
+    const seq = li + 1;
+    const dW = `${box.w}cm`, dL = `${box.l}cm`;
+    const wt = `${box.item.weight}kg`;
+
+    let faceMats;
+    if (box.h === ih) {
+      const mXside = makeMat(makeBoxTexture(name, col, 0,    dW, seq, wt), colorInt);
+      const mZside = makeMat(makeBoxTexture(name, col, 0,    dL, seq, wt), colorInt);
+      const mTop   = makeMat(makeBoxTexture(name, col, null, dL, null, null), colorInt);
+      const mPlain = makeMat(null, colorInt);
+      faceMats = [mXside, mXside, mTop, mPlain, mZside, mZside];
+    } else if (box.l === ih) {
+      const mEnd   = makeMat(makeBoxTexture(name, col, null, dW, null, null), colorInt);
+      const mRight = makeMat(makeBoxTexture(name, col, 90,   dL, seq,  wt), colorInt);
+      const mSide  = makeMat(makeBoxTexture(name, col, null, dL, seq,  wt), colorInt);
+      faceMats = [mEnd, mEnd, mRight, mRight, mSide, mSide];
+    } else {
+      const mLeft  = makeMat(makeBoxTexture(name, col, -90,  dW, seq, wt), colorInt);
+      const mRight = makeMat(makeBoxTexture(name, col,  90,  dW, seq, wt), colorInt);
+      const mTop   = makeMat(makeBoxTexture(name, col, null, dL, null, null), colorInt);
+      const mEnd   = makeMat(makeBoxTexture(name, col, null, dL, null, null), colorInt);
+      faceMats = [mLeft, mRight, mTop, mTop, mEnd, mEnd];
+    }
+
+    const mesh = new THREE.Mesh(geo, faceMats);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+
+    const tx = box.x + box.l/2;
+    const ty = box.z + box.h/2;   // Three.js Y = packing Z (height)
+    const tz = box.y + box.w/2;
+
+    // DROP animation — fall from above
+    const dropFrom = p.H + box.h * 2 + 40;
+    mesh.position.set(tx, dropFrom, tz);
+    mesh.userData.startY   = dropFrom;
+    mesh.userData.targetX  = tx;
+    mesh.userData.targetY  = ty;
+    mesh.userData.targetZ  = tz;
+    mesh.userData.animDelay = li * ANIM_GAP;
+    mesh.userData.animStart = null;
+    mesh.userData.animDone  = false;
+
+    if (appMode === 'manual') {
+      mesh.position.set(tx, ty, tz);
+      mesh.userData.animDone = true;
+    }
+
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geo),
+      new THREE.LineBasicMaterial({ color: rgbLighten(box.color, 30) })
+    );
+    mesh.add(edges);
+    boxGroup.add(mesh);
+    animQueue.push(mesh);
+    animIdx++;
+  }
+}
+
+// ── ANIMATION LOOP ───────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+let elapsed = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  elapsed += dt * 1000;
+  for (const mesh of animQueue) {
+    if (mesh.userData.animDone) continue;
+    if (elapsed < mesh.userData.animDelay) continue;
+    if (mesh.userData.animStart === null) mesh.userData.animStart = elapsed;
+    const t = Math.min(1, (elapsed - mesh.userData.animStart) / ANIM_DURATION);
+    const e = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    mesh.position.y = mesh.userData.startY + (mesh.userData.targetY - mesh.userData.startY) * e;
+    if (t >= 1) { mesh.position.y = mesh.userData.targetY; mesh.userData.animDone = true; }
+  }
+  const vp = document.getElementById('viewport');
+  const w = vp.clientWidth, h = vp.clientHeight;
+  if (canvas.width !== w*renderer.getPixelRatio() || canvas.height !== h*renderer.getPixelRatio()) {
+    renderer.setSize(w, h, false);
+    camera.aspect = w/h;
+    camera.updateProjectionMatrix();
+  }
+  renderer.render(scene, camera);
+}
+animate();
+
+// ── BIN PACKING — MULTI-PALLET ────────────────────────────────────────────────
+function packAll() {
+  const p = PALLETS[currentPKey];
+  allPallets = [];
+  const failed = [];
+  const expanded = [];
+  for (const it of cargoItems) for (let i = 0; i < it.qty; i++) expanded.push({...it});
+  expanded.sort((a,b) => b.weight - a.weight || (b.l*b.w*b.h) - (a.l*a.w*a.h));
+
+  function overlaps(ax,ay,az,al,aw,ah, bx,by,bz,bl,bw,bh) {
+    return ax < bx+bl-0.001 && ax+al > bx+0.001 &&
+           ay < by+bw-0.001 && ay+aw > by+0.001 &&
+           az < bz+bh-0.001 && az+ah > bz+0.001;
+  }
+  function canPlace(x,y,z,ol,ow,oh, boxes) {
+    if (x < -0.001 || y < -0.001 || z < -0.001) return false;
+    if (x+ol > p.L+0.001 || y+ow > p.W+0.001 || z+oh > p.H+0.001) return false;
+    for (const b of boxes) if (overlaps(x,y,z,ol,ow,oh, b.x,b.y,b.z,b.l,b.w,b.h)) return false;
+    return true;
+  }
+  function dropZ(x, y, ol, ow, boxes) {
+    let z = 0;
+    for (const b of boxes)
+      if (b.x < x+ol-0.001 && b.x+b.l > x+0.001 && b.y < y+ow-0.001 && b.y+b.w > y+0.001)
+        z = Math.max(z, b.z + b.h);
+    return z;
+  }
+  function tryPack(it, boxes) {
+    const all6     = [[it.l,it.w,it.h],[it.w,it.l,it.h],[it.l,it.h,it.w],[it.h,it.l,it.w],[it.w,it.h,it.l],[it.h,it.w,it.l]];
+    const upright2 = [[it.l,it.w,it.h],[it.w,it.l,it.h]];
+    const orients  = (it.upright ? upright2 : all6).filter(([ol,ow,oh]) => ol<=p.L && ow<=p.W && oh<=p.H);
+    const xs = [...new Set([0, ...boxes.map(b => b.x+b.l)])].filter(v => v < p.L-0.001).sort((a,b) => a-b);
+    const ys = [...new Set([0, ...boxes.map(b => b.y+b.w)])].filter(v => v < p.W-0.001).sort((a,b) => a-b);
+    let bestPos = null, bestOrient = null;
+    for (const x of xs) {
+      for (const y of ys) {
+        for (const [ol,ow,oh] of orients) {
+          const z = dropZ(x, y, ol, ow, boxes);
+          if (!canPlace(x, y, z, ol, ow, oh, boxes)) continue;
+          if (!bestPos || z < bestPos.z || (z===bestPos.z && x < bestPos.x) || (z===bestPos.z && x===bestPos.x && y < bestPos.y)) {
+            bestPos = {x, y, z}; bestOrient = [ol,ow,oh];
+          }
+        }
+      }
+    }
+    if (!bestPos) return null;
+    const [ol,ow,oh] = bestOrient;
+    return {x:bestPos.x, y:bestPos.y, z:bestPos.z, l:ol, w:ow, h:oh, item:it, color:it.color};
+  }
+
+  let currentBoxes = [];
+  let currentWgt = 0;
+
+  for (const it of expanded) {
+    if (it.weight > p.maxKg) { failed.push(it); continue; }
+
+    // Try current pallet
+    let placed = false;
+    if (currentWgt + it.weight <= p.maxKg) {
+      const result = tryPack(it, currentBoxes);
+      if (result) { currentBoxes.push(result); currentWgt += it.weight; placed = true; }
+    }
+
+    if (!placed) {
+      // Finish current pallet, start a new one
+      if (currentBoxes.length > 0) allPallets.push([...currentBoxes]);
+      currentBoxes = []; currentWgt = 0;
+      const result = tryPack(it, currentBoxes);
+      if (result) { currentBoxes.push(result); currentWgt += it.weight; placed = true; }
+      else failed.push(it);
+    }
+  }
+  if (currentBoxes.length > 0) allPallets.push([...currentBoxes]);
+
+  document.getElementById('warn-overlay').textContent =
+    failed.length ? `⚠ ${failed.length} item(s) could not be packed` : '';
+
+  currentPalletIdx = 0;
+  packedBoxes = allPallets.length > 0 ? allPallets[0] : [];
+  elapsed = 0;
+  renderPalletTabs();
+  renderBoxes(packedBoxes);
+  updateStats();
+}
+
+function viewPallet(idx) {
+  currentPalletIdx = idx;
+  packedBoxes = allPallets[idx] || [];
+  elapsed = 0;
+  renderPalletTabs();
+  renderBoxes(packedBoxes);
+  updateStats();
+}
+
+function renderPalletTabs() {
+  const p = PALLETS[currentPKey];
+  const tabsEl = document.getElementById('pallet-tabs');
+  const totalEl = document.getElementById('subbar-total');
+
+  if (!allPallets.length) {
+    tabsEl.innerHTML = '<span style="font-family:var(--mono);font-size:9px;color:var(--muted);padding:0 6px;">— pack items to see pallet result —</span>';
+    totalEl.textContent = '';
+    return;
+  }
+
+  tabsEl.innerHTML = allPallets.map((boxes, idx) => {
+    const wgt = boxes.reduce((s,b) => s+b.item.weight, 0);
+    const maxH = boxes.reduce((s,b) => Math.max(s, b.z+b.h), 0);
+    const hPct = Math.round(maxH / p.H * 100);
+    const wPct = Math.round(wgt / p.maxKg * 100);
+    const active = idx === currentPalletIdx;
+    return `<div class="ptab${active?' active':''}" onclick="viewPallet(${idx})">
+      <span class="ptab-num">Pallet #${idx+1}</span>
+      <span class="ptab-pct">H:${hPct}%</span>
+      <span class="ptab-items">${boxes.length} items · ${wgt}kg</span>
+    </div>`;
+  }).join('');
+
+  const totalItems = allPallets.reduce((s,b) => s+b.length, 0);
+  const totalWgt = allPallets.reduce((s,boxes) => s+boxes.reduce((w,b) => w+b.item.weight,0), 0);
+  totalEl.textContent = `${allPallets.length} pallets · ${totalItems} items · ${totalWgt.toLocaleString()}kg`;
+}
+
+// ── STATE MANAGEMENT ──────────────────────────────────────────────────────────
+let uprightInput = false;
+function toggleUprightInput() {
+  uprightInput = !uprightInput;
+  document.getElementById('uprightTrack').classList.toggle('on', uprightInput);
+}
+function setUprightInput(val) {
+  uprightInput = val;
+  document.getElementById('uprightTrack').classList.toggle('on', val);
+}
+
+function updatePalletTypeOverlay() {
+  const p = PALLETS[currentPKey];
+  document.getElementById('pallet-type-overlay').innerHTML = `
+    <div class="ct-label">Pallet Type</div>
+    <div class="ct-name">${p.label}</div>
+    <div class="ct-dims">${p.L} × ${p.W} cm &nbsp;·&nbsp; H ${p.H} cm &nbsp;·&nbsp; ${p.maxKg.toLocaleString()} kg</div>
+  `;
+}
+
+function changePallet(key) {
+  currentPKey = key;
+  const p = PALLETS[key];
+  document.getElementById('pallet-dims').textContent = `${p.L} × ${p.W} cm · max ${p.H} cm · ${p.maxKg.toLocaleString()} kg`;
+  allPallets = [];
+  packedBoxes = [];
+  while (boxGroup.children.length) boxGroup.remove(boxGroup.children[0]);
+  buildPallet(p);
+  buildDimensions(p);
+  updateStats();
+  document.getElementById('warn-overlay').textContent = '';
+  renderPalletTypeCards();
+  renderPalletTabs();
+  updatePalletTypeOverlay();
+}
+
+function addPalletType() {
+  const label = (document.getElementById('cName').value.trim()) || 'Custom Pallet';
+  const L = Math.max(1, parseInt(document.getElementById('cL').value) || 120);
+  const W = Math.max(1, parseInt(document.getElementById('cW').value) || 80);
+  const H = Math.max(1, parseInt(document.getElementById('cH').value) || 180);
+  const maxKg = Math.max(1, parseInt(document.getElementById('cKg').value) || 1000);
+  const key = 'custom_' + (customPalletIdx++);
+  PALLETS[key] = { label, L, W, H, maxKg, palletH: 14.4 };
+  document.getElementById('add-pallet-popover').classList.remove('open');
+  renderPalletTypeCards();
+  changePallet(key);
+}
+
+function removePalletType(key) {
+  if (STANDARD_KEYS.has(key)) return;
+  delete PALLETS[key];
+  if (currentPKey === key) changePallet('euro');
+  else renderPalletTypeCards();
+}
+
+function addItem() {
+  const name = document.getElementById('inName').value.trim() || 'Carton';
+  const l = Math.max(1, parseInt(document.getElementById('inL').value)||40);
+  const w = Math.max(1, parseInt(document.getElementById('inW').value)||30);
+  const h = Math.max(1, parseInt(document.getElementById('inH').value)||30);
+  const weight = parseFloat(document.getElementById('inWt').value)||10;
+  const qty = Math.max(1, parseInt(document.getElementById('inQty').value)||1);
+  const color = document.getElementById('inColor').value;
+  const upright = uprightInput;
+  cargoItems.push({ id:++itemId, name, l, w, h, weight, qty, color, upright });
+  palIdx++;
+  document.getElementById('inColor').value = PALETTE[palIdx % PALETTE.length];
+  allPallets = []; packedBoxes = [];
+  while (boxGroup.children.length) boxGroup.remove(boxGroup.children[0]);
+  renderManifest();
+  updateStats();
+  renderPalletTabs();
+  if (appMode === 'manual') renderManualItemSelect();
+}
+
+function removeItem(id) {
+  cargoItems = cargoItems.filter(it => it.id !== id);
+  allPallets = []; packedBoxes = []; manualHistory = [];
+  while (boxGroup.children.length) boxGroup.remove(boxGroup.children[0]);
+  renderManifest();
+  updateStats();
+  renderPalletTabs();
+  if (appMode === 'manual') { renderManualItemSelect(); removeGhost(); manualSelectedItem = null; }
+}
+
+function usePreset(key) {
+  const p = PRESETS[key];
+  document.getElementById('inName').value = p.name;
+  document.getElementById('inL').value = p.l;
+  document.getElementById('inW').value = p.w;
+  document.getElementById('inH').value = p.h;
+  document.getElementById('inWt').value = p.weight;
+  document.getElementById('inQty').value = 1;
+  document.getElementById('inColor').value = p.color;
+  setUprightInput(p.upright);
+}
+
+function loadSample() {
+  clearAll();
+  changePallet('euro');
+  const samples = [
+    { name:'Carton A', l:40, w:30, h:30, weight:12, qty:12, color:'#4a8fd4', upright:false },
+    { name:'Carton B', l:30, w:25, h:25, weight:8,  qty:15, color:'#d46060', upright:false },
+    { name:'Box C',    l:50, w:35, h:35, weight:20, qty:6,  color:'#4cad72', upright:false },
+    { name:'Small Pkg',l:20, w:15, h:15, weight:3,  qty:18, color:'#f0c040', upright:false },
+    { name:'Heavy Box',l:60, w:40, h:30, weight:30, qty:5,  color:'#a87fd4', upright:false },
+  ];
+  for (const s of samples) cargoItems.push({ id:++itemId, ...s });
+  renderManifest();
+  packAll();
+}
+
+function clearAll() {
+  cargoItems = []; allPallets = []; packedBoxes = []; palIdx = 1; manualHistory = [];
+  while (boxGroup.children.length) boxGroup.remove(boxGroup.children[0]);
+  document.getElementById('warn-overlay').textContent = '';
+  renderManifest();
+  updateStats();
+  renderPalletTabs();
+  if (appMode === 'manual') { renderManualItemSelect(); removeGhost(); manualSelectedItem = null; }
+}
+
+function badgeTextColor(hex) {
+  const c = parseInt(hex.replace('#',''), 16);
+  const lum = 0.299*((c>>16)&0xff) + 0.587*((c>>8)&0xff) + 0.114*(c&0xff);
+  return lum > 140 ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.92)';
+}
+
+function renderManifest() {
+  const el = document.getElementById('manifest-list');
+  if (!cargoItems.length) { el.innerHTML = '<div class="empty-msg">— no items added —</div>'; return; }
+  el.innerHTML = cargoItems.map(it => `
+    <div class="manifest-item">
+      <div class="manifest-badge" style="background:${it.color}">
+        <span class="manifest-badge-text" style="color:${badgeTextColor(it.color)}">${it.name}</span>
+      </div>
+      <div class="manifest-info">
+        <div class="manifest-dims">${it.l}×${it.w}×${it.h}cm · ${it.weight}kg</div>
+        <div style="margin-top:3px">
+          <span class="manifest-tag${it.upright ? ' upright' : ''}">${it.upright ? '↑ upright' : '⟳ any orient'}</span>
+        </div>
+      </div>
+      <div class="manifest-qty">×${it.qty}</div>
+      <div class="manifest-del" onclick="removeItem(${it.id})">✕</div>
+    </div>
+  `).join('');
+}
+
+function updateStats() {
+  const p = PALLETS[currentPKey];
+  const usedWgt = packedBoxes.reduce((s,b) => s+b.item.weight, 0);
+  const maxH = packedBoxes.reduce((s,b) => Math.max(s, b.z+b.h), 0);
+  const totalItems = cargoItems.reduce((s,it) => s+it.qty, 0);
+  const packedItems = packedBoxes.length;
+  const hPct = Math.round(maxH / p.H * 100);
+  const wgtPct = Math.round(usedWgt / p.maxKg * 100);
+  const itemPct = totalItems ? Math.round(packedItems/totalItems*100) : 0;
+  const setVal = (id,val,cls) => { const el=document.getElementById(id); el.textContent=val; el.className='stat-ov-val '+cls; };
+  const setBar = (id,pct,cls) => { const el=document.getElementById(id); el.style.width=Math.min(100,pct)+'%'; el.className='stat-ov-fill '+cls; };
+  const hCls = hPct>=90?'warn':hPct>=60?'good':'';
+  const wCls = wgtPct>=90?'warn':wgtPct>=60?'good':'';
+  setVal('sv',hPct+'%',hCls); setVal('sw',wgtPct+'%',wCls); setVal('si',packedItems+'/'+totalItems,itemPct>=90?'good':'');
+  setBar('sv-bar',hPct,hCls); setBar('sw-bar',wgtPct,wCls); setBar('si-bar',itemPct,itemPct>=90?'good':'');
+}
+
+// ── THEME ─────────────────────────────────────────────────────────────────────
+const DARK_THEME  = { bg:0x0e0f11, floor:0x141620, guide:0x2a3a28, guideEdge:0x5a8050, ambient:0.4, dir:1.2, fill:0.3, hemi:0.5, dirColor:0xfff5e0, fillColor:0x8cb0d0 };
+const LIGHT_THEME = { bg:0xf0ede8, floor:0xd8d4cc, guide:0x6a8060, guideEdge:0x7aaa70, ambient:0.7, dir:0.9, fill:0.4, hemi:0.3, dirColor:0xfff8f0, fillColor:0xd0e4f8 };
+let isDark = true;
+
+function applySceneTheme(t) {
+  renderer.setClearColor(t.bg);
+  ambient.intensity = t.ambient;
+  dirLight.intensity = t.dir; dirLight.color.setHex(t.dirColor);
+  fillLight.intensity = t.fill; fillLight.color.setHex(t.fillColor);
+  hemi.intensity = t.hemi;
+  palletGroup.children.forEach(child => {
+    if (child.isMesh && child.geometry && child.geometry.type === 'PlaneGeometry') {
+      child.material.color.setHex(t.floor);
+    }
+    if (child.isLineSegments) {
+      const cl = child.material.color.getHex();
+      if (cl === 0x2a3a28 || cl === 0x6a8060) child.material.color.setHex(t.guide);
+      if (cl === 0x5a8050 || cl === 0x7aaa70) child.material.color.setHex(t.guideEdge);
+    }
+  });
+  gridGroup.children.forEach(child => {
+    if (child.isGridHelper) {
+      child.material[0] && child.material[0].color.setHex(isDark ? 0x1e2028 : 0xcac6be);
+      child.material[1] && child.material[1].color.setHex(isDark ? 0x1a1d22 : 0xd8d4cc);
+    }
+  });
+}
+
+function toggleTheme() {
+  isDark = !isDark;
+  const label = document.getElementById('theme-toggle-label');
+  if (isDark) { document.documentElement.classList.remove('light'); label.textContent = 'Light'; applySceneTheme(DARK_THEME); renderer.setClearColor(0x0e0f11); }
+  else { document.documentElement.classList.add('light'); label.textContent = 'Dark'; applySceneTheme(LIGHT_THEME); renderer.setClearColor(0xf0ede8); }
+}
+
+// ── MANUAL LOADING ────────────────────────────────────────────────────────────
+let appMode = 'auto';
+let manualSelectedItem = null;
+let manualOrientIdx = 0;
+let manualOrients = [];
+let ghostMesh = null;
+let manualHistory = [];
+const ghostRaycaster = new THREE.Raycaster();
+const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+function setMode(mode) {
+  appMode = mode;
+  document.getElementById('mode-auto-btn').classList.toggle('active', mode === 'auto');
+  document.getElementById('mode-manual-btn').classList.toggle('active', mode === 'manual');
+  document.getElementById('auto-panel').style.display = mode === 'auto' ? '' : 'none';
+
+  const panel = document.getElementById('manual-panel');
+  if (mode === 'manual') {
+    const overlay = document.getElementById('company-overlay');
+    const overlayBottom = overlay.getBoundingClientRect().bottom;
+    const viewportTop = document.getElementById('viewport').getBoundingClientRect().top;
+    panel.style.top = (overlayBottom - viewportTop + 12) + 'px';
+    panel.style.display = 'block';
+    requestAnimationFrame(() => panel.classList.add('visible'));
+    packedBoxes = []; allPallets = [];
+    manualHistory = [];
+    while (boxGroup.children.length) boxGroup.remove(boxGroup.children[0]);
+    removeGhost();
+    updateStats();
+    renderManualItemSelect();
+    renderPalletTabs();
+    document.getElementById('warn-overlay').textContent = '';
+  } else {
+    panel.classList.remove('visible');
+    setTimeout(() => { panel.style.display = 'none'; }, 350);
+    removeGhost();
+    manualSelectedItem = null;
+  }
+}
+
+function renderManualItemSelect() {
+  const el = document.getElementById('manual-item-select');
+  const usedCounts = {};
+  for (const b of packedBoxes) { const id = b.item.id; usedCounts[id] = (usedCounts[id]||0) + 1; }
+  el.innerHTML = cargoItems.map(it => {
+    const used = usedCounts[it.id] || 0;
+    const remain = it.qty - used;
+    const active = manualSelectedItem && manualSelectedItem.id === it.id;
+    const depleted = remain <= 0;
+    return `<div class="manual-item-btn${active?' active':''}${depleted?' depleted':''}"
+      onclick="${depleted ? '' : `selectManualItem(${it.id})`}">
+      <div class="manual-item-dot" style="background:${it.color}"></div>
+      <div style="flex:1;min-width:0;">
+        <div class="manual-item-name">${it.name}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px;">
+          ${it.l}×${it.w}×${it.h}cm &nbsp;·&nbsp; ${it.weight}kg
+          &nbsp;<span style="color:${it.upright?'var(--accent)':'var(--muted)'};">${it.upright?'↑':'⟳'}</span>
+        </div>
+      </div>
+      <div class="manual-item-remain">${remain} left</div>
+    </div>`;
+  }).join('');
+}
+
+function selectManualItem(id) {
+  manualSelectedItem = cargoItems.find(it => it.id === id) || null;
+  manualOrientIdx = 0;
+  updateManualOrients();
+  renderManualItemSelect();
+  updateGhost();
+  if (lastMouseEvent) updateGhostFromEvent(lastMouseEvent);
+}
+
+function updateManualOrients() {
+  if (!manualSelectedItem) { manualOrients = []; return; }
+  const it = manualSelectedItem;
+  const all6     = [[it.l,it.w,it.h],[it.w,it.l,it.h],[it.l,it.h,it.w],[it.h,it.l,it.w],[it.w,it.h,it.l],[it.h,it.w,it.l]];
+  const upright2 = [[it.l,it.w,it.h],[it.w,it.l,it.h]];
+  const p = PALLETS[currentPKey];
+  manualOrients = (it.upright ? upright2 : all6).filter(([ol,ow,oh]) => ol<=p.L && ow<=p.W && oh<=p.H);
+  if (manualOrientIdx >= manualOrients.length) manualOrientIdx = 0;
+  document.getElementById('manual-orient-row').innerHTML = manualOrients.map(([ol,ow,oh], i) =>
+    `<div class="orient-btn${i===manualOrientIdx?' active':''}" onclick="setManualOrient(${i})">${ol}×${ow}×${oh}</div>`
+  ).join('');
+}
+
+function setManualOrient(idx) {
+  manualOrientIdx = idx;
+  updateManualOrients();
+  updateGhost();
+  if (lastMouseEvent) updateGhostFromEvent(lastMouseEvent);
+}
+
+function removeGhost() {
+  if (ghostMesh) { boxGroup.remove(ghostMesh); ghostMesh = null; }
+}
+
+function dropZ_manual(x, y, ol, ow) {
+  let z = 0;
+  for (const b of packedBoxes)
+    if (b.x < x+ol-0.01 && b.x+b.l > x+0.01 && b.y < y+ow-0.01 && b.y+b.w > y+0.01)
+      z = Math.max(z, b.z + b.h);
+  return z;
+}
+
+function snapToValid(rawX, rawY, ol, ow, oh) {
+  const p = PALLETS[currentPKey];
+  function isValid(x, y) {
+    const cx = Math.max(0, Math.min(p.L - ol, x));
+    const cy = Math.max(0, Math.min(p.W - ow, y));
+    const sz = dropZ_manual(cx, cy, ol, ow);
+    if (sz + oh > p.H + 0.01) return null;
+    return {x: cx, y: cy, z: sz};
+  }
+  const xs = [...new Set([0, ...packedBoxes.map(b=>b.x), ...packedBoxes.map(b=>b.x+b.l)])].filter(v => v >= 0 && v+ol <= p.L+0.01);
+  const ys = [...new Set([0, ...packedBoxes.map(b=>b.y), ...packedBoxes.map(b=>b.y+b.w)])].filter(v => v >= 0 && v+ow <= p.W+0.01);
+  const cursorCX = rawX + ol/2, cursorCY = rawY + ow/2;
+  let best = null, bestDist = Infinity;
+  for (const sx of xs) {
+    for (const sy of ys) {
+      const pos = isValid(sx, sy);
+      if (!pos) continue;
+      const dist = Math.hypot(sx + ol/2 - cursorCX, sy + ow/2 - cursorCY);
+      if (dist < bestDist) { bestDist = dist; best = pos; }
+    }
+  }
+  const snapRadius = Math.max(ol, ow) * 1.5;
+  if (best && bestDist <= snapRadius) return best;
+  return isValid(rawX, rawY);
+}
+
+function checkWeightStack(x, y, ol, ow, z, newWeight) {
+  if (z === 0) return null;
+  const supporters = packedBoxes.filter(b =>
+    Math.abs((b.z + b.h) - z) < 0.1 &&
+    b.x < x+ol-0.01 && b.x+b.l > x+0.01 &&
+    b.y < y+ow-0.01 && b.y+b.w > y+0.01
+  );
+  if (!supporters.length) return null;
+  const minSupportWeight = Math.min(...supporters.map(b => b.item.weight));
+  if (newWeight > minSupportWeight) return minSupportWeight;
+  return null;
+}
+
+function updateGhost() {
+  removeGhost();
+  if (!manualSelectedItem || appMode !== 'manual') return;
+  if (!manualOrients.length) return;
+  const [ol, ow, oh] = manualOrients[manualOrientIdx];
+  const it = manualSelectedItem;
+  const geo = new THREE.BoxGeometry(ol-0.8, oh-0.8, ow-0.8);
+  const isUpright = (oh === it.h);
+  const arrowAngle = isUpright ? 0 : null;
+  const dW = `${ow}cm`, dL = `${ol}cm`;
+  const wt = `${it.weight}kg`;
+  const mXside = new THREE.MeshStandardMaterial({ map: makeBoxTexture(it.name, it.color, arrowAngle, dW, null, wt), transparent: true, opacity: 0.65, roughness: 0.55 });
+  const mZside = new THREE.MeshStandardMaterial({ map: makeBoxTexture(it.name, it.color, arrowAngle, dL, null, wt), transparent: true, opacity: 0.65, roughness: 0.55 });
+  const mTop   = new THREE.MeshStandardMaterial({ color: hexToInt(it.color), transparent: true, opacity: 0.35, roughness: 0.55 });
+  ghostMesh = new THREE.Mesh(geo, [mXside, mXside, mTop, mTop, mZside, mZside]);
+  ghostMesh.userData.ol = ol; ghostMesh.userData.ow = ow; ghostMesh.userData.oh = oh;
+  ghostMesh.userData.weightOk = true;
+  ghostMesh.visible = false;
+  boxGroup.add(ghostMesh);
+}
+
+let lastMouseEvent = null;
+canvas.addEventListener('mousemove', e => { lastMouseEvent = e; updateGhostFromEvent(e); });
+
+function updateGhostFromEvent(e) {
+  if (appMode !== 'manual' || !manualSelectedItem || !ghostMesh) return;
+  if (dragState) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+  const my = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+  ghostRaycaster.setFromCamera({x:mx, y:my}, camera);
+  const hit = new THREE.Vector3();
+  if (!ghostRaycaster.ray.intersectPlane(floorPlane, hit)) {
+    const meshes = boxGroup.children.filter(m => m.isMesh && m !== ghostMesh);
+    const hits = ghostRaycaster.intersectObjects(meshes, false);
+    if (!hits.length) { ghostMesh.visible = false; return; }
+    hit.copy(hits[0].point);
+  }
+  const local = hit.clone().sub(boxGroup.position);
+  const rawX = local.x, rawY = local.z;
+  const [ol, ow, oh] = manualOrients[manualOrientIdx];
+  const snap = snapToValid(rawX - ol/2, rawY - ow/2, ol, ow, oh);
+  if (!snap) { ghostMesh.visible = false; return; }
+  const weightViolation = checkWeightStack(snap.x, snap.y, ol, ow, snap.z, manualSelectedItem.weight);
+  ghostMesh.userData.weightOk = !weightViolation;
+  if (weightViolation) {
+    ghostMesh.material.forEach(m => { m.color && m.color.setHex(0xff3333); m.opacity = 0.55; if (m.map) m.map = null; });
+  }
+  ghostMesh.position.set(snap.x + ol/2, snap.z + oh/2, snap.y + ow/2);
+  ghostMesh.visible = true;
+  ghostMesh.userData.snapPos = snap;
+  const hint = document.getElementById('manual-hint');
+  if (weightViolation) {
+    hint.innerHTML = `<span style="color:var(--red)">⚠ Heavy on light! This box (${manualSelectedItem.weight}kg) would stack on a ${weightViolation}kg box.</span>`;
+  } else {
+    hint.textContent = 'Hover to preview · Click to place · R to rotate · ESC to deselect';
+  }
+}
+
+canvas.addEventListener('click', e => {
+  if (appMode !== 'manual' || !manualSelectedItem || !ghostMesh) return;
+  if (!ghostMesh.visible || !ghostMesh.userData.snapPos) return;
+  if (!ghostMesh.userData.weightOk) {
+    document.getElementById('manual-hint').innerHTML = `<span style="color:var(--red)">⚠ Cannot place — heavier cargo must not stack on lighter cargo.</span>`;
+    return;
+  }
+  const it = manualSelectedItem;
+  const usedCount = packedBoxes.filter(b => b.item.id === it.id).length;
+  if (usedCount >= it.qty) return;
+  const [ol, ow, oh] = manualOrients[manualOrientIdx];
+  const {x, y, z} = ghostMesh.userData.snapPos;
+  const box = {x, y, z, l:ol, w:ow, h:oh, item:it, color:it.color};
+  packedBoxes.push(box);
+  manualHistory.push(box);
+  elapsed = 0;
+  renderBoxes(packedBoxes);
+  updateStats();
+  renderManualItemSelect();
+  updateGhost();
+  if (lastMouseEvent) updateGhostFromEvent(lastMouseEvent);
+});
+
+function manualUndo() {
+  if (!manualHistory.length) return;
+  manualHistory.pop();
+  packedBoxes = [...manualHistory];
+  elapsed = 0;
+  renderBoxes(packedBoxes);
+  updateStats();
+  renderManualItemSelect();
+  updateGhost();
+}
+
+window.addEventListener('keydown', e => {
+  if (appMode !== 'manual') return;
+  if (e.key === 'r' || e.key === 'R') {
+    if (!manualOrients.length) return;
+    manualOrientIdx = (manualOrientIdx + 1) % manualOrients.length;
+    updateManualOrients();
+    updateGhost();
+    if (lastMouseEvent) updateGhostFromEvent(lastMouseEvent);
+  }
+  if (e.key === 'Escape') {
+    manualSelectedItem = null;
+    removeGhost();
+    renderManualItemSelect();
+  }
+});
+
+// ── EXPORT PDF ────────────────────────────────────────────────────────────────
+async function exportPDF() {
+  if (!allPallets.length && !packedBoxes.length) { alert('Please pack the pallets first.'); return; }
+  const btn = document.getElementById('export-pdf-btn');
+  btn.textContent = '⏳ Generating...'; btn.disabled = true;
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const PW = 210, PH = 297, M = 14;
+
+  function hLine(y) { doc.setDrawColor(200,205,215); doc.setLineWidth(0.2); doc.line(M, y, PW-M, y); }
+  function sectionTitle(txt, y) {
+    doc.setFillColor(76,173,114); doc.rect(M, y, PW-M*2, 7, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(255,255,255);
+    doc.text(txt.toUpperCase(), M+3, y+5); return y+10;
+  }
+  function pageHeader(pageNum) {
+    const p = PALLETS[currentPKey];
+    const TP = 10;
+    doc.setFillColor(255,255,255); doc.rect(0,0,PW,12+TP,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(30,32,40);
+    doc.text('DEMO LOGISTICS', M, 7.5+TP);
+    doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(100,105,120);
+    doc.text('Pallet Loading Plan', M, 11+TP);
+    doc.setTextColor(60,65,80);
+    doc.text(new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}), PW-M, 7.5+TP, {align:'right'});
+    doc.text(`Page ${pageNum}`, PW-M, 11+TP, {align:'right'});
+    hLine(12+TP);
+    doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(60,65,80);
+    doc.text(`${p.label}   |   ${p.L} × ${p.W} cm   |   Max Height: ${p.H} cm   |   Max: ${p.maxKg.toLocaleString()} kg`, PW/2, 16.5+TP, {align:'center'});
+    hLine(19+TP);
+  }
+
+  function captureView(theta, phi, label) {
+    const p = PALLETS[currentPKey];
+    const diag = Math.sqrt(p.L**2+p.W**2+p.H**2);
+    const savedT=orbit.theta, savedP=orbit.phi, savedR=orbit.radius, savedTgt=orbit.target.clone();
+    orbit.theta=theta; orbit.phi=phi; orbit.radius=diag*1.6;
+    orbit.target.set(0,p.H*0.3,0); updateCamera();
+    renderer.render(scene, camera);
+    const img = renderer.domElement.toDataURL('image/jpeg',0.92);
+    orbit.theta=savedT; orbit.phi=savedP; orbit.radius=savedR; orbit.target.copy(savedTgt);
+    updateCamera(); renderer.render(scene,camera);
+    return {img, label};
+  }
+
+  const wasLight = !isDark;
+  if (!wasLight) applySceneTheme(LIGHT_THEME);
+  renderer.setClearColor(0xf0ede8);
+
+  const views = [
+    captureView(orbit.theta, orbit.phi,  'Perspective'),
+    captureView(0,           0.01,        'Top View'),
+    captureView(Math.PI,     1.1,         'Front'),
+    captureView(0,           1.1,         'Back'),
+    captureView(-Math.PI/2,  1.1,         'Left Side'),
+    captureView( Math.PI/2,  1.1,         'Right Side'),
+  ];
+
+  if (!wasLight) { applySceneTheme(DARK_THEME); renderer.setClearColor(0x0e0f11); }
+  else { applySceneTheme(LIGHT_THEME); renderer.setClearColor(0xf0ede8); }
+  renderer.render(scene, camera);
+
+  let pageNum = 1;
+  pageHeader(pageNum);
+  let y = 32;
+  y = sectionTitle(`Pallet #${currentPalletIdx+1} of ${allPallets.length || 1} — 3D Views`, y);
+  const imgW = (PW-M*2-4)/2;
+  const imgH = imgW*(renderer.domElement.height/renderer.domElement.width);
+  views.forEach(({img,label},i) => {
+    const col=i%2, row=Math.floor(i/2);
+    const x=M+col*(imgW+4), vy=y+row*(imgH+9);
+    doc.addImage(img,'JPEG',x,vy,imgW,imgH);
+    doc.setFontSize(7); doc.setTextColor(80,85,100); doc.setFont('helvetica','normal');
+    doc.text(label, x+imgW/2, vy+imgH+4, {align:'center'});
+  });
+
+  // Page 2: Manifest + Sequence
+  doc.addPage(); pageNum++;
+  pageHeader(pageNum);
+  y = 32;
+
+  const p = PALLETS[currentPKey];
+  const usedWgt = packedBoxes.reduce((s,b) => s+b.item.weight, 0);
+  const maxH = packedBoxes.reduce((s,b) => Math.max(s, b.z+b.h), 0);
+  const totalItems = cargoItems.reduce((s,it) => s+it.qty, 0);
+
+  doc.setFillColor(245,247,250); doc.rect(M,y,PW-M*2,12,'F');
+  doc.setDrawColor(220,225,235); doc.setLineWidth(0.3); doc.rect(M,y,PW-M*2,12,'S');
+  [['Height Util.',`${Math.round(maxH/p.H*100)}%`],
+   ['Weight Util.',`${Math.round(usedWgt/p.maxKg*100)}%`],
+   ['Items (this)',`${packedBoxes.length}`],
+   ['Total Pallets',`${allPallets.length || 1}`]
+  ].forEach(([lbl,val],i) => {
+    const sx=M+(PW-M*2)/4*i+3;
+    doc.setFontSize(7); doc.setTextColor(100,105,120); doc.setFont('helvetica','normal'); doc.text(lbl,sx,y+5);
+    doc.setFontSize(10); doc.setTextColor(30,130,80); doc.setFont('helvetica','bold'); doc.text(val,sx,y+11);
+  });
+  y+=16;
+
+  y = sectionTitle('Cargo Manifest', y);
+  const mCols=['#','Name','L×W×H (cm)','Weight','Qty','Orientation'];
+  const mW=[8,46,40,22,12,26];
+  doc.setFillColor(220,225,235); doc.rect(M,y,PW-M*2,6,'F');
+  let cx=M+2;
+  mCols.forEach((h,i) => { doc.setFontSize(7); doc.setTextColor(40,45,60); doc.setFont('helvetica','bold'); doc.text(h,cx,y+4.5); cx+=mW[i]; });
+  y+=7;
+  cargoItems.forEach((it,idx) => {
+    if(y>PH-20){doc.addPage();pageNum++;pageHeader(pageNum);y=32;}
+    doc.setFillColor(...(idx%2===0?[252,253,255]:[242,245,250])); doc.rect(M,y,PW-M*2,6,'F');
+    const hx=it.color.replace('#','');
+    doc.setFillColor(parseInt(hx.slice(0,2),16),parseInt(hx.slice(2,4),16),parseInt(hx.slice(4,6),16));
+    doc.rect(M+1,y+1,4,4,'F');
+    cx=M+7;
+    [`${idx+1}`,it.name,`${it.l}×${it.w}×${it.h}`,`${it.weight} kg`,`×${it.qty}`,it.upright?'↑ Upright':'⟳ Any'].forEach((v,i) => {
+      doc.setFontSize(7); doc.setTextColor(30,35,50); doc.setFont('helvetica','normal');
+      doc.text(String(v),cx,y+4.5); cx+=mW[i];
+    });
+    y+=7;
+  });
+  y+=6;
+
+  if(y>PH-40){doc.addPage();pageNum++;pageHeader(pageNum);y=32;}
+  y = sectionTitle(`Stacking Sequence — Pallet #${currentPalletIdx+1}`, y);
+  const sCols=['Seq','Name','Position (X/Y/Layer)','Size (L×W×H)','Weight','Orient'];
+  const sW=[12,42,38,36,20,20];
+  doc.setFillColor(220,225,235); doc.rect(M,y,PW-M*2,6,'F');
+  cx=M+2;
+  sCols.forEach((h,i) => { doc.setFontSize(7); doc.setTextColor(40,45,60); doc.setFont('helvetica','bold'); doc.text(h,cx,y+4.5); cx+=sW[i]; });
+  y+=7;
+  const stackOrder=[...packedBoxes].sort((a,b) => a.z-b.z || a.x-b.x || a.y-b.y);
+  stackOrder.forEach((box,idx) => {
+    if(y>PH-16){doc.addPage();pageNum++;pageHeader(pageNum);y=32;}
+    doc.setFillColor(...(idx%2===0?[252,253,255]:[242,245,250])); doc.rect(M,y,PW-M*2,6,'F');
+    const hx=box.color.replace('#','');
+    doc.setFillColor(parseInt(hx.slice(0,2),16),parseInt(hx.slice(2,4),16),parseInt(hx.slice(4,6),16));
+    doc.rect(M+1,y+1,3,4,'F');
+    const xPct = box.x / p.L;
+    const yPct = box.y / p.W;
+    const zPct = box.z / p.H;
+    const xPos = xPct < 0.35 ? 'Left' : xPct < 0.65 ? 'Center' : 'Right';
+    const yPos = yPct < 0.35 ? 'Front' : yPct < 0.65 ? 'Middle' : 'Back';
+    const layer = zPct < 0.35 ? 'L1-Bottom' : zPct < 0.65 ? 'L2-Mid' : 'L3-Top';
+    const posLabel = `${xPos}/${yPos}/${layer}`;
+    const orient = box.h===box.item.h ? 'Upright' : box.l===box.item.h ? 'Tipped X' : 'Tipped Z';
+    cx=M+6;
+    [`#${idx+1}`,box.item.name,posLabel,
+     `${box.l}×${box.w}×${box.h}`,`${box.item.weight}kg`,orient].forEach((v,i) => {
+      doc.setFontSize(7); doc.setTextColor(30,35,50); doc.setFont('helvetica','normal');
+      doc.text(String(v),cx,y+4.5); cx+=sW[i];
+    });
+    y+=7;
+  });
+
+  for(let pg=1;pg<=pageNum;pg++){
+    doc.setPage(pg);
+    doc.setFillColor(240,242,245); doc.rect(0,PH-8,PW,8,'F');
+    doc.setFontSize(7); doc.setTextColor(100,105,120); doc.setFont('helvetica','normal');
+    doc.text('Developed by Komsan Kongsuwan  |  komsan.kongsuwan@gmail.com  |  +66-81-723-9680',PW/2,PH-3,{align:'center'});
+  }
+
+  doc.save(`pallet-plan-${new Date().toISOString().slice(0,10)}.pdf`);
+  btn.textContent = '⬇ Export PDF'; btn.disabled = false;
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+renderPalletTypeCards();
+updatePalletTypeOverlay();
+renderPalletTabs();
+initScrollbars();
+document.addEventListener('click', e => {
+  const popove
