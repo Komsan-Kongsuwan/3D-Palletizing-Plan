@@ -228,7 +228,9 @@ select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
 #manifest-list { height: 212px; overflow-y: auto; }
 #manifest-list::-webkit-scrollbar { width: 3px; }
 #manifest-list::-webkit-scrollbar-thumb { background: var(--border2); }
-.manifest-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin-bottom: 3px; background: var(--surface); border: 1px solid var(--border); border-radius: 3px; }
+.manifest-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin-bottom: 3px; background: var(--surface); border: 1px solid var(--border); border-radius: 3px; transition: border-color 0.15s; }
+.manifest-item:hover { border-color: var(--border2); }
+.manifest-item.editing { border-color: #4a8fd4; background: rgba(74,143,212,0.08); }
 .manifest-badge { flex-shrink: 0; width: 72px; height: 36px; border-radius: 3px; border: 1.5px solid rgba(0,0,0,0.22); box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.18); display: flex; align-items: center; justify-content: center; padding: 2px 5px; overflow: hidden; }
 .manifest-badge-text { font-family: var(--mono); font-size: 8px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; text-align: center; line-height: 1.3; word-break: break-word; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .manifest-info { flex: 1; min-width: 0; }
@@ -359,7 +361,7 @@ html.light #theme-toggle-thumb { left: 17px; }
             <button class="btn danger" id="manual-undo-btn" onclick="manualUndo()">↩ Undo Last</button>
           </div>
           <div id="company-overlay">
-            <div id="company-name">DEMO LOGISTICS SOLUTION</div>
+            <div id="company-name">DEMO LOGISTICS</div>
             <div id="company-sub">Pallet Loading Plan</div>
             <p id="pallet-dims" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:4px;">120 × 80 cm · max 180 cm · 1,000 kg</p>
             <div id="stats-overlay">
@@ -381,6 +383,15 @@ html.light #theme-toggle-thumb { left: 17px; }
             </div>
           </div>
           <div id="pallet-type-overlay"></div>
+          <div id="weight-tol-overlay" style="position:absolute;top:14px;right:14px;margin-top:90px;pointer-events:all;text-align:right;">
+            <div style="font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;text-shadow:0 1px 3px rgba(0,0,0,0.5);">Weight Tolerance</div>
+            <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">
+              <input type="number" id="weightTolerance" value="0" min="0" max="100" step="1"
+                style="width:64px;background:var(--surface2);border:1px solid var(--border2);color:var(--accent);font-family:var(--mono);font-size:13px;font-weight:700;padding:4px 8px;border-radius:4px;text-align:center;outline:none;">
+              <span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-shadow:0 1px 3px rgba(0,0,0,0.5);">kg</span>
+            </div>
+            <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px;text-shadow:0 1px 3px rgba(0,0,0,0.5);">upper box excess over lower box</div>
+          </div>
           <div id="dev-overlay">
             <div>Developed by Komsan Kongsuwan</div>
             <div>komsan.kongsuwan@gmail.com</div>
@@ -400,7 +411,7 @@ html.light #theme-toggle-thumb { left: 17px; }
       </div>
 
       <div class="section">
-        <div class="section-title">Add Item</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span class="section-title" style="margin-bottom:0" id="form-section-title">Add Item</span><span id="form-edit-label" style="display:none;font-family:var(--mono);font-size:9px;font-weight:700;color:#fff;background:#4a8fd4;padding:3px 10px;border-radius:20px;letter-spacing:1.5px;">EDITING</span></div>
         <div class="form-row">
           <div class="form-field" style="flex:2">
             <label>Name</label>
@@ -425,12 +436,11 @@ html.light #theme-toggle-thumb { left: 17px; }
           <span class="upright-label" id="uprightLabel">Upright only (no flipping)</span>
         </div>
         <div class="btn-row">
-          <button class="btn" style="background:#2e7d52;color:#fff;" onclick="addItem()">+ Add to Manifest</button>
+          <button class="btn primary" id="btn-add-item" onclick="addItem()">+ Add to Manifest</button>
+          <button class="btn" id="btn-cancel-edit" style="display:none;background:#555;color:#fff;" onclick="cancelEdit()">✕ Cancel</button>
         </div>
       </div>
 
-      
-      </div>
 
       <div class="section">
         <div id="mode-toggle-row">
@@ -454,13 +464,13 @@ html.light #theme-toggle-thumb { left: 17px; }
 
 <script>
 // ── PALLET TYPES ─────────────────────────────────────────────────────────────
-const STANDARD_KEYS = new Set(['euro','us','iso','half','chep']);
+const STANDARD_KEYS = new Set(['wp110x110','wp110x120','wp90x100','pp110x110','pp110x120']);
 const PALLETS = {
-  'euro': { label:'Euro Pallet',   L:120,   W:80,    H:180, maxKg:1000, palletH:14.4 },
-  'us':   { label:'US Standard',   L:121.9, W:101.6, H:180, maxKg:1200, palletH:15   },
-  'iso':  { label:'US ISO',        L:110,   W:110,   H:180, maxKg:1200, palletH:15   },
-  'half': { label:'Half Pallet',   L:80,    W:60,    H:120, maxKg:500,  palletH:12   },
-  'chep': { label:'CHEP Pallet',   L:120,   W:100,   H:180, maxKg:1500, palletH:15   },
+  'wp110x110': { label:'Wooden Pallet 110×110', L:110, W:110, H:180, maxKg:1000, palletH:14.4 },
+  'wp110x120': { label:'Wooden Pallet 110×120', L:110, W:120, H:180, maxKg:1000, palletH:14.4 },
+  'wp90x100':  { label:'Wooden Pallet 90×100',  L:90,  W:100, H:100, maxKg:100,  palletH:14.4 },
+  'pp110x110': { label:'Plastic Pallet 110×110', L:110, W:110, H:150, maxKg:1000, palletH:14.4, plastic:true },
+  'pp110x120': { label:'Plastic Pallet 110×120', L:110, W:120, H:150, maxKg:1000, palletH:14.4, plastic:true },
 };
 let customPalletIdx = 1;
 
@@ -486,10 +496,17 @@ function toggleAddPalletPopover() {
 }
 
 // ── PRESETS ───────────────────────────────────────────────────────────────────
-
+const PRESETS = {
+  carton_s:  { name:'Carton S',   l:30, w:20, h:20, weight:5,  color:'#4cad72', upright:false },
+  carton_m:  { name:'Carton M',   l:40, w:30, h:30, weight:10, color:'#4a8fd4', upright:false },
+  carton_l:  { name:'Carton L',   l:60, w:40, h:40, weight:18, color:'#a87fd4', upright:false },
+  box_heavy: { name:'Heavy Box',  l:50, w:40, h:35, weight:28, color:'#c8a040', upright:false },
+  drum:      { name:'Drum',       l:58, w:58, h:85, weight:80, color:'#d46060', upright:true  },
+  crate:     { name:'Crate',      l:80, w:60, h:60, weight:40, color:'#f0c040', upright:false },
+};
 const PALETTE = ['#4cad72','#4a8fd4','#d46060','#a87fd4','#c8a040','#f0c040','#d48860','#60a8d4','#80c870','#6ab4d4'];
 
-let currentPKey = 'euro';
+let currentPKey = 'wp110x110';
 let cargoItems = [];
 let allPallets = [];       // array of box arrays, one per packed pallet
 let currentPalletIdx = 0;
@@ -684,46 +701,104 @@ function buildPallet(p) {
 
   const L = p.L, W = p.W, pH = p.palletH || 14.4;
   const hw = L/2, hd = W/2;
+  const isPlastic = !!p.plastic;
 
-  const woodMat  = new THREE.MeshStandardMaterial({ color: 0xc4a464, roughness: 0.9, metalness: 0.0 });
-  const darkMat  = new THREE.MeshStandardMaterial({ color: 0x8b6830, roughness: 0.9, metalness: 0.0 });
+  if (isPlastic) {
+    // ── PLASTIC PALLET (blue HDPE moulded) ──
+    const deckMat = new THREE.MeshStandardMaterial({ color: 0x2a6ab5, roughness: 0.3, metalness: 0.15 });
+    const ribMat  = new THREE.MeshStandardMaterial({ color: 0x1e5090, roughness: 0.25, metalness: 0.2 });
+    const legMat  = new THREE.MeshStandardMaterial({ color: 0x1a4a80, roughness: 0.3, metalness: 0.1 });
 
-  // --- Top deck boards (running in Z / width direction) ---
-  const topBH = 2.4;
-  const numBoards = 7;
-  const boardGapL = L / numBoards;
-  const boardThick = boardGapL * 0.68;
-  for (let i = 0; i < numBoards; i++) {
-    const bx = (i / (numBoards-1) - 0.5) * (L - boardThick);
-    const geo = new THREE.BoxGeometry(boardThick, topBH, W);
-    const m = new THREE.Mesh(geo, woodMat.clone());
-    m.position.set(bx, -topBH/2, 0);
-    m.receiveShadow = true;
-    palletGroup.add(m);
-  }
+    // Main deck surface
+    const deckH = 3.5;
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(L, deckH, W), deckMat.clone());
+    deck.position.set(0, -deckH/2, 0);
+    deck.receiveShadow = true;
+    palletGroup.add(deck);
 
-  // --- 3 Stringers running in X / length direction ---
-  const stringerH = pH - topBH - 4.8;
-  const stringerW = Math.min(14, W * 0.14);
-  const stringerPosZ = [0, -hd + stringerW/2, hd - stringerW/2];
-  for (const sz of stringerPosZ) {
-    const geo = new THREE.BoxGeometry(L, stringerH, stringerW);
-    const m = new THREE.Mesh(geo, darkMat.clone());
-    m.position.set(0, -topBH - stringerH/2, sz);
-    m.castShadow = true; m.receiveShadow = true;
-    palletGroup.add(m);
-  }
+    // Longitudinal ribs (running in X direction)
+    const numRibs = 5, ribH = 1.5, ribW = 2.5;
+    for (let i = 0; i < numRibs; i++) {
+      const rz = (i / (numRibs-1) - 0.5) * (W - ribW);
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(L, ribH, ribW), ribMat.clone());
+      rib.position.set(0, -deckH - ribH/2, rz);
+      rib.castShadow = true; rib.receiveShadow = true;
+      palletGroup.add(rib);
+    }
 
-  // --- 3 Bottom boards (running in Z / width direction) ---
-  const botBH = 4.8;
-  const botW = Math.min(boardThick * 2, L / 3 * 0.75);
-  for (let i = 0; i < 3; i++) {
-    const bx = (i / 2 - 0.5) * (L - botW);
-    const geo = new THREE.BoxGeometry(botW, botBH, W);
-    const m = new THREE.Mesh(geo, woodMat.clone());
-    m.position.set(bx, -pH + botBH/2, 0);
-    m.castShadow = true; m.receiveShadow = true;
-    palletGroup.add(m);
+    // Cross ribs (running in Z direction)
+    const numCross = 3, cribH = 1.2, cribW = 2.0;
+    for (let i = 0; i < numCross; i++) {
+      const cx = (i / (numCross-1) - 0.5) * (L - cribW);
+      const crib = new THREE.Mesh(new THREE.BoxGeometry(cribW, cribH, W), ribMat.clone());
+      crib.position.set(cx, -deckH - cribH/2, 0);
+      crib.castShadow = true; crib.receiveShadow = true;
+      palletGroup.add(crib);
+    }
+
+    // 9 moulded legs (3x3 grid)
+    const legW = L * 0.18, legD = W * 0.18;
+    const legH = pH - deckH - 2.0;
+    for (let ix = 0; ix < 3; ix++) {
+      for (let iz = 0; iz < 3; iz++) {
+        const lx = (ix / 2 - 0.5) * (L - legW);
+        const lz = (iz / 2 - 0.5) * (W - legD);
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(legW * 0.85, legH, legD * 0.85), legMat.clone());
+        leg.position.set(lx, -deckH - legH/2 - 1.2, lz);
+        leg.castShadow = true; leg.receiveShadow = true;
+        palletGroup.add(leg);
+      }
+    }
+
+    // Bottom runner slab
+    const runH = 1.5;
+    const botRunner = new THREE.Mesh(new THREE.BoxGeometry(L, runH, W), deckMat.clone());
+    botRunner.position.set(0, -pH + runH/2, 0);
+    botRunner.receiveShadow = true;
+    palletGroup.add(botRunner);
+
+  } else {
+    // ── WOODEN PALLET ──
+    const woodMat  = new THREE.MeshStandardMaterial({ color: 0xc4a464, roughness: 0.9, metalness: 0.0 });
+    const darkMat  = new THREE.MeshStandardMaterial({ color: 0x8b6830, roughness: 0.9, metalness: 0.0 });
+
+    // Top deck boards
+    const topBH = 2.4;
+    const numBoards = 7;
+    const boardGapL = L / numBoards;
+    const boardThick = boardGapL * 0.68;
+    for (let i = 0; i < numBoards; i++) {
+      const bx = (i / (numBoards-1) - 0.5) * (L - boardThick);
+      const geo = new THREE.BoxGeometry(boardThick, topBH, W);
+      const m = new THREE.Mesh(geo, woodMat.clone());
+      m.position.set(bx, -topBH/2, 0);
+      m.receiveShadow = true;
+      palletGroup.add(m);
+    }
+
+    // 3 Stringers
+    const stringerH = pH - topBH - 4.8;
+    const stringerW = Math.min(14, W * 0.14);
+    const stringerPosZ = [0, -hd + stringerW/2, hd - stringerW/2];
+    for (const sz of stringerPosZ) {
+      const geo = new THREE.BoxGeometry(L, stringerH, stringerW);
+      const m = new THREE.Mesh(geo, darkMat.clone());
+      m.position.set(0, -topBH - stringerH/2, sz);
+      m.castShadow = true; m.receiveShadow = true;
+      palletGroup.add(m);
+    }
+
+    // 3 Bottom boards
+    const botBH = 4.8;
+    const botW = Math.min(boardThick * 2, L / 3 * 0.75);
+    for (let i = 0; i < 3; i++) {
+      const bx = (i / 2 - 0.5) * (L - botW);
+      const geo = new THREE.BoxGeometry(botW, botBH, W);
+      const m = new THREE.Mesh(geo, woodMat.clone());
+      m.position.set(bx, -pH + botBH/2, 0);
+      m.castShadow = true; m.receiveShadow = true;
+      palletGroup.add(m);
+    }
   }
 
   // --- Pallet edge outline at floor level ---
@@ -783,7 +858,7 @@ function buildPallet(p) {
   dirLight.shadow.camera.updateProjectionMatrix();
 }
 
-buildPallet(PALLETS['euro']);
+buildPallet(PALLETS['wp110x110']);
 
 // ── BOX TEXTURES ─────────────────────────────────────────────────────────────
 function hexToInt(hex) { return parseInt(hex.replace('#',''), 16); }
@@ -1001,10 +1076,23 @@ function packAll() {
            ay < by+bw-0.001 && ay+aw > by+0.001 &&
            az < bz+bh-0.001 && az+ah > bz+0.001;
   }
-  function canPlace(x,y,z,ol,ow,oh, boxes) {
+  function canPlace(x,y,z,ol,ow,oh, boxes, itemWeight) {
     if (x < -0.001 || y < -0.001 || z < -0.001) return false;
     if (x+ol > p.L+0.001 || y+ow > p.W+0.001 || z+oh > p.H+0.001) return false;
     for (const b of boxes) if (overlaps(x,y,z,ol,ow,oh, b.x,b.y,b.z,b.l,b.w,b.h)) return false;
+    // Weight tolerance check — only applies when stacking (z > 0)
+    if (z > 0.001 && itemWeight !== undefined) {
+      const tolerance = getWeightTolerance();
+      const supporters = boxes.filter(b =>
+        Math.abs((b.z + b.h) - z) < 0.1 &&
+        b.x < x+ol-0.001 && b.x+b.l > x+0.001 &&
+        b.y < y+ow-0.001 && b.y+b.w > y+0.001
+      );
+      if (supporters.length > 0) {
+        const minSupportWeight = Math.min(...supporters.map(b => b.item.weight));
+        if (itemWeight > minSupportWeight + tolerance) return false;
+      }
+    }
     return true;
   }
   function dropZ(x, y, ol, ow, boxes) {
@@ -1025,7 +1113,7 @@ function packAll() {
       for (const y of ys) {
         for (const [ol,ow,oh] of orients) {
           const z = dropZ(x, y, ol, ow, boxes);
-          if (!canPlace(x, y, z, ol, ow, oh, boxes)) continue;
+          if (!canPlace(x, y, z, ol, ow, oh, boxes, it.weight)) continue;
           if (!bestPos || z < bestPos.z || (z===bestPos.z && x < bestPos.x) || (z===bestPos.z && x===bestPos.x && y < bestPos.y)) {
             bestPos = {x, y, z}; bestOrient = [ol,ow,oh];
           }
@@ -1128,6 +1216,17 @@ function updatePalletTypeOverlay() {
     <div class="ct-name">${p.label}</div>
     <div class="ct-dims">${p.L} × ${p.W} cm &nbsp;·&nbsp; H ${p.H} cm &nbsp;·&nbsp; ${p.maxKg.toLocaleString()} kg</div>
   `;
+  // Position weight tolerance widget just below pallet type overlay
+  requestAnimationFrame(() => {
+    const ptOverlay = document.getElementById('pallet-type-overlay');
+    const wtOverlay = document.getElementById('weight-tol-overlay');
+    if (ptOverlay && wtOverlay) {
+      const bottom = ptOverlay.getBoundingClientRect().bottom;
+      const vpTop  = document.getElementById('viewport').getBoundingClientRect().top;
+      wtOverlay.style.top  = (bottom - vpTop + 10) + 'px';
+      wtOverlay.style.marginTop = '0';
+    }
+  });
 }
 
 function changePallet(key) {
@@ -1161,8 +1260,40 @@ function addPalletType() {
 function removePalletType(key) {
   if (STANDARD_KEYS.has(key)) return;
   delete PALLETS[key];
-  if (currentPKey === key) changePallet('euro');
+  if (currentPKey === key) changePallet('wp110x110');
   else renderPalletTypeCards();
+}
+
+let editingItemId = null;
+
+function selectItemForEdit(id) {
+  const it = cargoItems.find(i => i.id === id);
+  if (!it) return;
+  editingItemId = id;
+  document.getElementById('inName').value = it.name;
+  document.getElementById('inL').value = it.l;
+  document.getElementById('inW').value = it.w;
+  document.getElementById('inH').value = it.h;
+  document.getElementById('inWt').value = it.weight;
+  document.getElementById('inQty').value = it.qty;
+  document.getElementById('inColor').value = it.color;
+  setUprightInput(it.upright);
+  document.getElementById('form-section-title').textContent = 'Edit Item';
+  document.getElementById('form-edit-label').style.display = '';
+  document.getElementById('btn-add-item').textContent = '✔ Update Item';
+  document.getElementById('btn-add-item').style.background = '#4a8fd4';
+  document.getElementById('btn-cancel-edit').style.display = '';
+  renderManifest();
+}
+
+function cancelEdit() {
+  editingItemId = null;
+  document.getElementById('form-section-title').textContent = 'Add Item';
+  document.getElementById('form-edit-label').style.display = 'none';
+  document.getElementById('btn-add-item').textContent = '+ Add to Manifest';
+  document.getElementById('btn-add-item').style.background = '#2e7d52';
+  document.getElementById('btn-cancel-edit').style.display = 'none';
+  renderManifest();
 }
 
 function addItem() {
@@ -1174,9 +1305,17 @@ function addItem() {
   const qty = Math.max(1, parseInt(document.getElementById('inQty').value)||1);
   const color = document.getElementById('inColor').value;
   const upright = uprightInput;
-  cargoItems.push({ id:++itemId, name, l, w, h, weight, qty, color, upright });
-  palIdx++;
-  document.getElementById('inColor').value = PALETTE[palIdx % PALETTE.length];
+  if (editingItemId !== null) {
+    // Update existing item
+    const idx = cargoItems.findIndex(i => i.id === editingItemId);
+    if (idx !== -1) cargoItems[idx] = { ...cargoItems[idx], name, l, w, h, weight, qty, color, upright };
+    cancelEdit();
+  } else {
+    // Add new item
+    cargoItems.push({ id:++itemId, name, l, w, h, weight, qty, color, upright });
+    palIdx++;
+    document.getElementById('inColor').value = PALETTE[palIdx % PALETTE.length];
+  }
   allPallets = []; packedBoxes = [];
   while (boxGroup.children.length) boxGroup.remove(boxGroup.children[0]);
   renderManifest();
@@ -1186,6 +1325,7 @@ function addItem() {
 }
 
 function removeItem(id) {
+  if (editingItemId === id) cancelEdit();
   cargoItems = cargoItems.filter(it => it.id !== id);
   allPallets = []; packedBoxes = []; manualHistory = [];
   while (boxGroup.children.length) boxGroup.remove(boxGroup.children[0]);
@@ -1195,17 +1335,33 @@ function removeItem(id) {
   if (appMode === 'manual') { renderManualItemSelect(); removeGhost(); manualSelectedItem = null; }
 }
 
-
+function usePreset(key) {
+  const p = PRESETS[key];
+  document.getElementById('inName').value = p.name;
+  document.getElementById('inL').value = p.l;
+  document.getElementById('inW').value = p.w;
+  document.getElementById('inH').value = p.h;
+  document.getElementById('inWt').value = p.weight;
+  document.getElementById('inQty').value = 1;
+  document.getElementById('inColor').value = p.color;
+  setUprightInput(p.upright);
+}
 
 function loadSample() {
   clearAll();
-  changePallet('euro');
+  changePallet('wp110x110');
+  // 3 layers that tile perfectly on 110x110 pallet:
+  // Layer 1 (bottom): 55x55 -> 2x2 = 4 boxes
+  // Layer 2 (middle): 55x55 -> 2x2 = 4 boxes
+  // Layer 3 (top):    36x36 -> 3x3 = 9 boxes (108cm fits snugly)
+  // Stacks to ~175cm on 110x110 pallet (max 180cm):
+  // L1: Heavy 55x55x35 = 35cm | L2: Mid 55x55x30 = 65cm
+  // L3: Light 36x36x25 = 90cm | L4: Mid 55x55x30 = 120cm
+  // L5: Light 36x36x25 = 145cm | L6: Mid 55x55x30 = 175cm
   const samples = [
-    { name:'Carton A', l:40, w:30, h:30, weight:12, qty:12, color:'#4a8fd4', upright:false },
-    { name:'Carton B', l:30, w:25, h:25, weight:8,  qty:15, color:'#d46060', upright:false },
-    { name:'Box C',    l:50, w:35, h:35, weight:20, qty:6,  color:'#4cad72', upright:false },
-    { name:'Small Pkg',l:20, w:15, h:15, weight:3,  qty:18, color:'#f0c040', upright:false },
-    { name:'Heavy Box',l:60, w:40, h:30, weight:30, qty:5,  color:'#a87fd4', upright:false },
+    { name:'Heavy Base', l:55, w:55, h:35, weight:25, qty:4,  color:'#a87fd4', upright:false },
+    { name:'Mid Box',    l:55, w:55, h:30, weight:15, qty:12, color:'#4a8fd4', upright:false },
+    { name:'Light Top',  l:36, w:36, h:25, weight:5,  qty:18, color:'#4cad72', upright:false },
   ];
   for (const s of samples) cargoItems.push({ id:++itemId, ...s });
   renderManifest();
@@ -1232,7 +1388,7 @@ function renderManifest() {
   const el = document.getElementById('manifest-list');
   if (!cargoItems.length) { el.innerHTML = '<div class="empty-msg">— no items added —</div>'; return; }
   el.innerHTML = cargoItems.map(it => `
-    <div class="manifest-item">
+    <div class="manifest-item${editingItemId === it.id ? ' editing' : ''}" onclick="selectItemForEdit(${it.id})" style="cursor:pointer;">
       <div class="manifest-badge" style="background:${it.color}">
         <span class="manifest-badge-text" style="color:${badgeTextColor(it.color)}">${it.name}</span>
       </div>
@@ -1243,7 +1399,7 @@ function renderManifest() {
         </div>
       </div>
       <div class="manifest-qty">×${it.qty}</div>
-      <div class="manifest-del" onclick="removeItem(${it.id})">✕</div>
+      <div class="manifest-del" onclick="event.stopPropagation();removeItem(${it.id})">✕</div>
     </div>
   `).join('');
 }
@@ -1432,6 +1588,10 @@ function snapToValid(rawX, rawY, ol, ow, oh) {
   return isValid(rawX, rawY);
 }
 
+function getWeightTolerance() {
+  return Math.max(0, parseFloat(document.getElementById('weightTolerance').value) || 0);
+}
+
 function checkWeightStack(x, y, ol, ow, z, newWeight) {
   if (z === 0) return null;
   const supporters = packedBoxes.filter(b =>
@@ -1441,7 +1601,8 @@ function checkWeightStack(x, y, ol, ow, z, newWeight) {
   );
   if (!supporters.length) return null;
   const minSupportWeight = Math.min(...supporters.map(b => b.item.weight));
-  if (newWeight > minSupportWeight) return minSupportWeight;
+  const tolerance = getWeightTolerance();
+  if (newWeight > minSupportWeight + tolerance) return minSupportWeight;
   return null;
 }
 
@@ -1498,7 +1659,7 @@ function updateGhostFromEvent(e) {
   ghostMesh.userData.snapPos = snap;
   const hint = document.getElementById('manual-hint');
   if (weightViolation) {
-    hint.innerHTML = `<span style="color:var(--red)">⚠ Heavy on light! This box (${manualSelectedItem.weight}kg) would stack on a ${weightViolation}kg box.</span>`;
+    const tol = getWeightTolerance(); hint.innerHTML = `<span style="color:var(--red)">⚠ Weight exceeded! This box (${manualSelectedItem.weight}kg) exceeds lower box (${weightViolation}kg) by more than tolerance (${tol}kg).</span>`;
   } else {
     hint.textContent = 'Hover to preview · Click to place · R to rotate · ESC to deselect';
   }
@@ -1508,7 +1669,7 @@ canvas.addEventListener('click', e => {
   if (appMode !== 'manual' || !manualSelectedItem || !ghostMesh) return;
   if (!ghostMesh.visible || !ghostMesh.userData.snapPos) return;
   if (!ghostMesh.userData.weightOk) {
-    document.getElementById('manual-hint').innerHTML = `<span style="color:var(--red)">⚠ Cannot place — heavier cargo must not stack on lighter cargo.</span>`;
+    const tol2 = getWeightTolerance(); document.getElementById('manual-hint').innerHTML = `<span style="color:var(--red)">⚠ Cannot place — weight difference exceeds tolerance of ${tol2}kg.</span>`;
     return;
   }
   const it = manualSelectedItem;
@@ -1575,7 +1736,7 @@ async function exportPDF() {
     const TP = 10;
     doc.setFillColor(255,255,255); doc.rect(0,0,PW,12+TP,'F');
     doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(30,32,40);
-    doc.text('DEMO LOGISTICS SOLUTION', M, 7.5+TP);
+    doc.text('DEMO LOGISTICS', M, 7.5+TP);
     doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(100,105,120);
     doc.text('Pallet Loading Plan', M, 11+TP);
     doc.setTextColor(60,65,80);
