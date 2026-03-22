@@ -71,14 +71,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
   font-weight: 600; transition: all 0.15s;
 }
 #add-pallet-btn:hover { background: #5a92be; }
-#sample-load-btn {
-  flex-shrink: 0;
-  font-family: var(--mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
-  border: 1px solid var(--accent2); background: var(--accent2); color: #fff;
-  padding: 5px 10px; cursor: pointer; border-radius: 4px; white-space: nowrap;
-  font-weight: 700; transition: all 0.15s;
-}
-#sample-load-btn:hover { background: var(--accent); border-color: var(--accent); }
+
 #export-pdf-btn {
   flex-shrink: 0;
   font-family: var(--mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
@@ -261,6 +254,22 @@ input[type=color] { width: 40px; height: 30px; padding: 2px; background: var(--s
 .chip.sample:hover { background: var(--accent2); color: #fff; }
 
 #cam-hint { position: absolute; bottom: 14px; left: 14px; font-family: var(--mono); font-size: 9px; color: var(--muted); letter-spacing: 1px; pointer-events: none; line-height: 1.8; }
+
+/* ── SAMPLE NOTICE BANNER ── */
+#sample-notice {
+  position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+  background: #1a6ab5; color: #fff;
+  font-family: var(--sans); font-size: 13px;
+  padding: 10px 20px 10px 16px;
+  border-radius: 8px;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  white-space: nowrap; z-index: 40;
+  opacity: 1;
+  transition: opacity 2s ease;
+  pointer-events: all;
+}
+
 #cam-hint span { color: var(--accent); }
 
 #warn-overlay { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--red); background: rgba(10,12,18,0.88); border: 2px solid var(--red); border-radius: 6px; padding: 10px 22px; pointer-events: none; white-space: nowrap; display: none; z-index: 30; letter-spacing: 1px; }
@@ -308,7 +317,6 @@ html.light #theme-toggle-thumb { left: 17px; }
     <div id="topbar-title">Pallet</div>
     <div id="pallet-type-cards"></div>
     <button id="add-pallet-btn" onclick="toggleAddPalletPopover()">+ Custom</button>
-    <button id="sample-load-btn" onclick="loadSample()">▶ Sample Load</button>
     <button id="export-pdf-btn" onclick="exportPDF()">⬇ Export PDF</button>
     <div id="add-pallet-popover">
       <div class="section-title">Add Custom Pallet</div>
@@ -349,6 +357,11 @@ html.light #theme-toggle-thumb { left: 17px; }
           <canvas id="three"></canvas>
           <div id="cam-hint">
             <span>drag</span> rotate &nbsp;·&nbsp; <span>scroll</span> zoom &nbsp;·&nbsp; <span>right-drag</span> pan
+          </div>
+          <div id="sample-notice" style="display:none;">
+            <div class="notice-icon">i</div>
+            <div class="notice-text">This is a <strong>sample load</strong> for demonstration. Click <strong>✕ Clear</strong> in the sidebar to start your own manifest.</div>
+            <div class="notice-close" onclick="dismissNotice()">✕</div>
           </div>
           <div id="warn-overlay"></div>
           <!-- MANUAL PANEL OVERLAY -->
@@ -394,7 +407,7 @@ html.light #theme-toggle-thumb { left: 17px; }
           </div>
           <div id="dev-overlay">
             <div>Developed by Komsan Kongsuwan</div>
-            <div>komsan.kongsuwan@gmail.com</div>
+            <div><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="8de6e2e0feece3a3e6e2e3eafef8faece3cdeae0ece4e1a3eee2e0">[email&#160;protected]</a></div>
             <div>+66-81-723-9680</div>
           </div>
         </div>
@@ -462,7 +475,7 @@ html.light #theme-toggle-thumb { left: 17px; }
   </div><!-- /#main-row -->
 </div>
 
-<script>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
 // ── PALLET TYPES ─────────────────────────────────────────────────────────────
 const STANDARD_KEYS = new Set(['wp110x110','wp110x120','wp90x100','pp110x110','pp110x120']);
 const PALLETS = {
@@ -1347,6 +1360,12 @@ function usePreset(key) {
   setUprightInput(p.upright);
 }
 
+function dismissNotice() {
+  const n = document.getElementById('sample-notice');
+  n.classList.add('fade-out');
+  setTimeout(() => { n.style.display = 'none'; }, 2000);
+}
+
 function loadSample() {
   clearAll();
   changePallet('wp110x110');
@@ -1366,12 +1385,24 @@ function loadSample() {
   for (const s of samples) cargoItems.push({ id:++itemId, ...s });
   renderManifest();
   packAll();
+
+  // Show notice banner, then auto-fade after animation completes
+  // Total anim time: 34 boxes * 80ms gap + 480ms duration = ~3,200ms
+  const totalBoxes = samples.reduce((s, x) => s + x.qty, 0);
+  const animMs = totalBoxes * ANIM_GAP + ANIM_DURATION + 5000; // +5000ms hold
+  const notice = document.getElementById('sample-notice');
+  notice.style.display = 'flex';
+  notice.classList.remove('fade-out');
+  notice.style.opacity = '1';
+  setTimeout(() => dismissNotice(), animMs);
 }
 
 function clearAll() {
   cargoItems = []; allPallets = []; packedBoxes = []; palIdx = 1; manualHistory = [];
   while (boxGroup.children.length) boxGroup.remove(boxGroup.children[0]);
   document.getElementById('warn-overlay').textContent = '';
+  const n = document.getElementById('sample-notice');
+  if (n) { n.style.display = 'none'; n.classList.remove('fade-out'); }
   renderManifest();
   updateStats();
   renderPalletTabs();
@@ -1883,8 +1914,8 @@ async function exportPDF() {
 // ── INIT ──────────────────────────────────────────────────────────────────────
 renderPalletTypeCards();
 updatePalletTypeOverlay();
-renderPalletTabs();
 initScrollbars();
+loadSample();
 document.addEventListener('click', e => {
   const popover = document.getElementById('add-pallet-popover');
   const btn = document.getElementById('add-pallet-btn');
