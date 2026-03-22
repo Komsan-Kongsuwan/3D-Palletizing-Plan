@@ -475,7 +475,7 @@ html.light #theme-toggle-thumb { left: 17px; }
   </div><!-- /#main-row -->
 </div>
 
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+<script>
 // ── PALLET TYPES ─────────────────────────────────────────────────────────────
 const STANDARD_KEYS = new Set(['wp110x110','wp110x120','wp90x100','pp110x110','pp110x120']);
 const PALLETS = {
@@ -1389,7 +1389,7 @@ function loadSample() {
   // Show notice banner, then auto-fade after animation completes
   // Total anim time: 34 boxes * 80ms gap + 480ms duration = ~3,200ms
   const totalBoxes = samples.reduce((s, x) => s + x.qty, 0);
-  const animMs = totalBoxes * ANIM_GAP + ANIM_DURATION + 5000; // +5000ms hold
+  const animMs = totalBoxes * ANIM_GAP + ANIM_DURATION + 300;
   const notice = document.getElementById('sample-notice');
   notice.style.display = 'flex';
   notice.classList.remove('fade-out');
