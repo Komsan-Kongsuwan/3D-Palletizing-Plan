@@ -407,7 +407,7 @@ html.light #theme-toggle-thumb { left: 17px; }
           </div>
           <div id="dev-overlay">
             <div>Developed by Komsan Kongsuwan</div>
-            <div><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="52393d3f21333c7c393d3c35212725333c12353f333b3e7c313d3f">[email&#160;protected]</a></div>
+            <div style="pointer-events:all;" id="dev-email-wrap"></div>
             <div>+66-81-723-9680</div>
           </div>
         </div>
@@ -475,7 +475,7 @@ html.light #theme-toggle-thumb { left: 17px; }
   </div><!-- /#main-row -->
 </div>
 
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+<script>
 // ── PALLET TYPES ─────────────────────────────────────────────────────────────
 const STANDARD_KEYS = new Set(['wp110x110','wp110x120','wp90x100','pp110x110','pp110x120']);
 const PALLETS = {
@@ -1915,6 +1915,21 @@ async function exportPDF() {
 renderPalletTypeCards();
 updatePalletTypeOverlay();
 initScrollbars();
+// Build email link via JS so Cloudflare cannot obfuscate it
+(function() {
+  const u = 'komsan.kongsuwan';
+  const d = 'gmail.com';
+  const el = document.getElementById('dev-email-wrap');
+  if (el) {
+    const a = document.createElement('a');
+    a.href = 'mailto:' + u + '@' + d;
+    a.textContent = u + '@' + d;
+    a.style.cssText = 'color:var(--muted);text-decoration:none;pointer-events:all;cursor:pointer;';
+    a.onmouseover = function(){ this.style.color='var(--accent)'; };
+    a.onmouseout  = function(){ this.style.color='var(--muted)'; };
+    el.appendChild(a);
+  }
+})();
 loadSample();
 document.addEventListener('click', e => {
   const popover = document.getElementById('add-pallet-popover');
