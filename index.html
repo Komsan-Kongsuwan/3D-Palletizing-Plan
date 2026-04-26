@@ -284,16 +284,16 @@ html.light #theme-toggle-thumb{left:16px;}
     <div id="warn-overlay"></div>
     <div id="anim-progress"><div id="anim-progress-bar"></div></div>
     <div id="sample-notice" style="display:none;">
-      <span>&#9432; This is a <strong>sample load</strong> for demonstration. Click <strong>&#10005; Clear</strong> to start your own manifest.</span>
+      <span>&#9432; This is a <strong>sample load</strong> for demonstration. Click <strong>&#9632; Stop</strong> then upload your own manifest.</span>
       <span class="n-close" onclick="dismissNotice()">&#10005;</span>
     </div>
     <div id="company-overlay">
       <div id="company-name">DEMO LOGISTICS</div>
       <div id="stats-overlay">
-        <div><div class="stat-ov-label">Pallet Height</div><div class="stat-ov-val" id="sv">0 cm</div><div class="stat-ov-bar"><div class="stat-ov-fill" id="sv-bar" style="width:0%"></div></div></div>
-        <div><div class="stat-ov-label">Total Weight</div><div class="stat-ov-val" id="sw">0 kgs</div><div class="stat-ov-bar"><div class="stat-ov-fill" id="sw-bar" style="width:0%"></div></div></div>
-        <div><div class="stat-ov-label">Palletizing</div><div class="stat-ov-val" id="sp">0 of 0</div><div id="sp-unit" style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:2px;">pallets</div><div class="stat-ov-bar"><div class="stat-ov-fill" id="sp-bar" style="width:0%"></div></div></div>
-        <div><div class="stat-ov-label">Stacking</div><div class="stat-ov-val" id="sc">0 of 0</div><div id="sc-unit" style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:2px;">cartons</div><div class="stat-ov-bar"><div class="stat-ov-fill" id="sc-bar" style="width:0%"></div></div></div>
+        <div><div class="stat-ov-label" id="stat-lbl-sv">Pallet Height</div><div class="stat-ov-val" id="sv">0 cm</div><div class="stat-ov-bar"><div class="stat-ov-fill" id="sv-bar" style="width:0%"></div></div></div>
+        <div><div class="stat-ov-label" id="stat-lbl-sw">Total Weight</div><div class="stat-ov-val" id="sw">0 kgs</div><div class="stat-ov-bar"><div class="stat-ov-fill" id="sw-bar" style="width:0%"></div></div></div>
+        <div><div class="stat-ov-label" id="stat-lbl-sp">Palletizing</div><div class="stat-ov-val" id="sp">0 of 0</div><div id="sp-unit" style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:2px;">pallets</div><div class="stat-ov-bar"><div class="stat-ov-fill" id="sp-bar" style="width:0%"></div></div></div>
+        <div><div class="stat-ov-label" id="stat-lbl-sc">Stacking</div><div class="stat-ov-val" id="sc">0 of 0</div><div id="sc-unit" style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:2px;">cartons</div><div class="stat-ov-bar"><div class="stat-ov-fill" id="sc-bar" style="width:0%"></div></div></div>
       </div>
     </div>
     <div id="pallet-type-overlay"></div>
@@ -403,6 +403,22 @@ const PALLETS = {
 };
 let customPalletIdx = 1;
 
+// ── CONTAINER TYPES ───────────────────────────────────────────────────────────
+const CONTAINERS={
+  '20GP':{label:"20\u2019 General Purpose", L:590,  W:235, H:239, maxKg:28000},
+  '20HC':{label:"20\u2019 High Cube",       L:590,  W:235, H:269, maxKg:28000},
+  '40GP':{label:"40\u2019 General Purpose", L:1203, W:235, H:239, maxKg:28000},
+  '40HC':{label:"40\u2019 High Cube",       L:1203, W:235, H:269, maxKg:28000},
+};
+let currentCKey='40GP';
+let allContainers=[];
+let containerScreenshots=[];
+let currentContainerIdx=0;
+let simPalletTotal=0;
+let totalPalletsToLoad=0;
+let appPhase='pallet'; // 'pallet' | 'container'
+
+
 function renderPalletTypeCards() {
   const el = document.getElementById('pallet-type-cards');
   el.innerHTML = Object.entries(PALLETS).map(([key,p]) => {
@@ -504,6 +520,7 @@ const gridGroup=new THREE.Group();scene.add(gridGroup);
 const palletGroup=new THREE.Group();scene.add(palletGroup);
 const boxGroup=new THREE.Group();scene.add(boxGroup);
 const dimGroup=new THREE.Group();scene.add(dimGroup);
+const containerGroup=new THREE.Group();scene.add(containerGroup);
 let isDark=true;
 
 function buildGrid(p){
@@ -673,7 +690,8 @@ function startSequentialAnim(boxes,onComplete){
   dropNextInSequence();
 }
 
-function dropNextInSequence(){
+function dropNextInSequence(gen){
+  if(gen!==undefined&&gen!==simGeneration)return;
   if(seqIsPaused){return;}
   if(seqCurrentIdx>=seqTotalBoxes){
     seqIsRunning=false;
@@ -799,6 +817,470 @@ function buildDimensions(p){
   dimGroup.add(hMesh);
 }
 
+
+// ── CONTAINER FUNCTIONS ───────────────────────────────────────────────────────
+function hexToIntC(hex){return parseInt(hex.replace('#',''),16);}
+function rgbLightenC(hex,amt){const c=parseInt(hex.replace('#',''),16);return(Math.min(255,((c>>16)&0xff)+amt)<<16)|(Math.min(255,((c>>8)&0xff)+amt)<<8)|Math.min(255,(c&0xff)+amt);}
+
+function buildContainer(c){
+  while(containerGroup.children.length)containerGroup.remove(containerGroup.children[0]);
+  while(boxGroup.children.length)boxGroup.remove(boxGroup.children[0]);
+  while(dimGroup.children.length)dimGroup.remove(dimGroup.children[0]);
+  const hW=c.W/2,hL=c.L/2,hH=c.H/2;
+  boxGroup.position.set(-hW,0,-hL);
+  // Floor
+  const floor=new THREE.Mesh(new THREE.BoxGeometry(c.W,3,c.L),new THREE.MeshStandardMaterial({color:0x1a1d22,roughness:0.95,metalness:0.05}));
+  floor.position.set(0,-1.5,0);floor.receiveShadow=true;containerGroup.add(floor);
+  // Floor grid lines
+  const lineMat=new THREE.LineBasicMaterial({color:0x2a2e38,transparent:true,opacity:0.6});
+  const steps=Math.ceil(c.L/30);
+  for(let i=0;i<=steps;i++){const zp=-hL+(i/steps)*c.L;const pts=[-hW,0.1,zp,hW,0.1,zp];const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));containerGroup.add(new THREE.Line(g,lineMat));}
+  // Back wall
+  const bwMat=new THREE.MeshStandardMaterial({color:0x1e222c,roughness:0.9,metalness:0.05,transparent:true,opacity:0.85});
+  const backWall=new THREE.Mesh(new THREE.BoxGeometry(c.W,c.H,4),bwMat);
+  backWall.position.set(0,hH,-hL-2);containerGroup.add(backWall);
+  // Side walls + roof (semi-transparent)
+  const wallMat=new THREE.MeshStandardMaterial({color:0x1e2638,roughness:0.8,metalness:0.15,transparent:true,opacity:0.18,side:THREE.DoubleSide});
+  const lWall=new THREE.Mesh(new THREE.BoxGeometry(3,c.H,c.L),wallMat.clone());lWall.position.set(-hW-1.5,hH,0);containerGroup.add(lWall);
+  const rWall=new THREE.Mesh(new THREE.BoxGeometry(3,c.H,c.L),wallMat.clone());rWall.position.set(hW+1.5,hH,0);containerGroup.add(rWall);
+  const roofMat=new THREE.MeshStandardMaterial({color:0x1e2638,roughness:0.7,metalness:0.2,transparent:true,opacity:0.14,side:THREE.DoubleSide});
+  const roof=new THREE.Mesh(new THREE.BoxGeometry(c.W,3,c.L),roofMat);roof.position.set(0,c.H+1.5,0);containerGroup.add(roof);
+  const doorMat=new THREE.MeshStandardMaterial({color:0x2a3850,roughness:0.7,metalness:0.1,transparent:true,opacity:0.06,side:THREE.DoubleSide});
+  const door=new THREE.Mesh(new THREE.BoxGeometry(c.W,c.H,2),doorMat);door.position.set(0,hH,hL+1);containerGroup.add(door);
+  // Edge wireframe
+  const edgePts=[];
+  const edgeDefs=[[[-hW,0,-hL],[hW,0,-hL]],[[hW,0,-hL],[hW,0,hL]],[[hW,0,hL],[-hW,0,hL]],[[-hW,0,hL],[-hW,0,-hL]],[[-hW,c.H,-hL],[hW,c.H,-hL]],[[hW,c.H,-hL],[hW,c.H,hL]],[[hW,c.H,hL],[-hW,c.H,hL]],[[-hW,c.H,hL],[-hW,c.H,-hL]],[[-hW,0,-hL],[-hW,c.H,-hL]],[[hW,0,-hL],[hW,c.H,-hL]],[[hW,0,hL],[hW,c.H,hL]],[[-hW,0,hL],[-hW,c.H,hL]]];
+  for(const[a,b]of edgeDefs)edgePts.push(...a,...b);
+  const edgeGeo=new THREE.BufferGeometry();edgeGeo.setAttribute('position',new THREE.Float32BufferAttribute(edgePts,3));
+  containerGroup.add(new THREE.LineSegments(edgeGeo,new THREE.LineBasicMaterial({color:0x3a4a5a,opacity:0.8,transparent:true})));
+  // Corner posts
+  const postMat=new THREE.MeshStandardMaterial({color:0x2e3e52,roughness:0.5,metalness:0.7});
+  for(const[ex,ez]of[[-1,-1],[-1,1],[1,-1],[1,1]]){
+    const post=new THREE.Mesh(new THREE.BoxGeometry(5,c.H,5),postMat.clone());post.position.set(ex*hW,hH,ez*hL);containerGroup.add(post);
+    const fit=new THREE.Mesh(new THREE.BoxGeometry(8,6,8),new THREE.MeshStandardMaterial({color:0x4a5a6a,metalness:0.8}));fit.position.set(ex*hW,c.H+3,ez*hL);containerGroup.add(fit);
+    const fitB=new THREE.Mesh(new THREE.BoxGeometry(8,6,8),new THREE.MeshStandardMaterial({color:0x4a5a6a,metalness:0.8}));fitB.position.set(ex*hW,-3,ez*hL);containerGroup.add(fitB);
+  }
+  // Grid
+  while(gridGroup.children.length)gridGroup.remove(gridGroup.children[0]);
+  const c1=isDark?0x1e2028:0xcac6be,c2=isDark?0x1a1d22:0xd8d4cc;
+  const gridSize=Math.max(c.L,c.W)*1.5;
+  const grid=new THREE.GridHelper(gridSize,40,c1,c2);grid.position.y=-1;gridGroup.add(grid);
+  // Container dimensions (same flat style)
+  buildContainerDimensions(c);
+  // Camera
+  const diag=Math.sqrt(c.L*c.L+c.W*c.W+c.H*c.H);
+  orbit.radius=diag*1.1;orbit.target.set(0,c.H*0.3,0);orbit.theta=0.7;orbit.phi=1.05;
+  updateCamera();updateScrollbars();
+  // Shadow
+  dirLight.shadow.camera.left=-c.L;dirLight.shadow.camera.right=c.L;
+  dirLight.shadow.camera.top=c.H*2;dirLight.shadow.camera.bottom=-c.H;
+  dirLight.shadow.camera.far=diag*3;dirLight.shadow.camera.updateProjectionMatrix();
+}
+
+function buildContainerDimensions(c){
+  while(dimGroup.children.length)dimGroup.remove(dimGroup.children[0]);
+  const hW=c.W/2,hL=c.L/2,H=c.H;
+  const lm=new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:0.85});
+  const lmExt=new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:0.25});
+  const gap=15,tk=6,gy=0;
+
+  function addSegC(pts,mat){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));dimGroup.add(new THREE.Line(g,mat));}
+
+  function flatLabel(text,rotZ,scale){
+    const cv=document.createElement('canvas');cv.width=640;cv.height=160;
+    const ctx=cv.getContext('2d');ctx.clearRect(0,0,640,160);
+    ctx.fillStyle='#ffffff';ctx.font='bold 110px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,320,80);
+    const pw=(scale||50),ph=pw*(160/640);
+    const mesh=new THREE.Mesh(new THREE.PlaneGeometry(pw,ph),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(cv),transparent:true,depthWrite:false,side:THREE.DoubleSide}));
+    mesh.rotation.x=-Math.PI/2;if(rotZ)mesh.rotation.z=-rotZ;return mesh;
+  }
+
+  // WIDTH (short side — runs along X axis, offset in Z)
+  const lz=hL+gap;
+  addSegC([-hW,gy,lz,hW,gy,lz],lm);addSegC([-hW,gy,lz-tk,-hW,gy,lz+tk],lm);addSegC([hW,gy,lz-tk,hW,gy,lz+tk],lm);
+  addSegC([-hW,gy,hL,-hW,gy,lz],lmExt);addSegC([hW,gy,hL,hW,gy,lz],lmExt);
+  const wLbl=flatLabel(`W: ${c.W} cm`,0,c.W*0.35);wLbl.position.set(0,gy,lz+c.W*0.35*0.6);dimGroup.add(wLbl);
+
+  // LENGTH (long side — runs along Z axis, offset in X)
+  const wx=hW+gap;
+  addSegC([wx,gy,-hL,wx,gy,hL],lm);addSegC([wx-tk,gy,-hL,wx+tk,gy,-hL],lm);addSegC([wx-tk,gy,hL,wx+tk,gy,hL],lm);
+  addSegC([hW,gy,-hL,wx,gy,-hL],lmExt);addSegC([hW,gy,hL,wx,gy,hL],lmExt);
+  const lLbl=flatLabel(`L: ${c.L} cm`,Math.PI/2,c.L*0.14);lLbl.position.set(wx+c.L*0.14*0.6,gy,0);dimGroup.add(lLbl);
+
+  // HEIGHT (left-front vertical)
+  const hx=-(hW+gap),hz=hL;
+  addSegC([hx,0,hz,hx,H,hz],lm);addSegC([hx-tk,0,hz,hx+tk,0,hz],lm);addSegC([hx-tk,H,hz,hx+tk,H,hz],lm);
+  addSegC([-hW,0,hL,hx,0,hz],lmExt);addSegC([-hW,H,hL,hx,H,hz],lmExt);
+  const hTex=(()=>{const cv=document.createElement('canvas');cv.width=160;cv.height=640;const ctx=cv.getContext('2d');ctx.clearRect(0,0,160,640);ctx.fillStyle='#ffffff';ctx.font='bold 110px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.save();ctx.translate(80,320);ctx.rotate(-Math.PI/2);ctx.fillText(`H: ${H} cm`,0,0);ctx.restore();return new THREE.CanvasTexture(cv);})();
+  const hLabelH=H*0.35,hLabelW=hLabelH*(160/640);
+  const hMesh=new THREE.Mesh(new THREE.PlaneGeometry(hLabelW,hLabelH),new THREE.MeshBasicMaterial({map:hTex,transparent:true,depthWrite:false,side:THREE.DoubleSide}));
+  hMesh.rotation.y=Math.PI/2;hMesh.position.set(hx-hLabelW*0.6,H/2,hz);dimGroup.add(hMesh);
+}
+
+function buildWoodenBase(group,px,py,pz,sw,sd){
+  const pH=14.4,hw=sw/2,hd=sd/2,cx=px+hw,cz=pz+hd,topY=py+pH;
+  const woodMat=new THREE.MeshStandardMaterial({color:0xc4a464,roughness:0.9,metalness:0.0});
+  const darkMat=new THREE.MeshStandardMaterial({color:0x8b6830,roughness:0.9,metalness:0.0});
+  const topBH=2.4,numBoards=7,boardGapL=sw/numBoards,boardThick=boardGapL*0.68;
+  for(let i=0;i<numBoards;i++){const bx=(i/(numBoards-1)-0.5)*(sw-boardThick);const m=new THREE.Mesh(new THREE.BoxGeometry(boardThick,topBH,sd),woodMat.clone());m.position.set(cx+bx,topY-topBH/2,cz);m.receiveShadow=true;group.add(m);}
+  const stringerH=pH-topBH-4.8,stringerW=Math.min(14,sd*0.14);
+  for(const szOff of[0,-(hd-stringerW/2),hd-stringerW/2]){const m=new THREE.Mesh(new THREE.BoxGeometry(sw,stringerH,stringerW),darkMat.clone());m.position.set(cx,topY-topBH-stringerH/2,cz+szOff);m.castShadow=true;m.receiveShadow=true;group.add(m);}
+  const botBH=4.8,botW=Math.min(boardThick*2,sw/3*0.75);
+  for(let i=0;i<3;i++){const bx=(i/2-0.5)*(sw-botW);const m=new THREE.Mesh(new THREE.BoxGeometry(botW,botBH,sd),woodMat.clone());m.position.set(cx+bx,py+botBH/2,cz);m.castShadow=true;m.receiveShadow=true;group.add(m);}
+}
+
+function buildCartonStack(group,px,py,pz,sw,sd,cargoH,cartonCount,palletName,hexColor){
+  if(cargoH<1)return;
+  const n=Math.max(1,cartonCount||1);
+  const cargoVol=sw*sd*cargoH;
+  const singleVol=cargoVol/n;
+  let cs=Math.cbrt(singleVol);
+  cs=Math.max(18,Math.min(58,cs));
+  const nx=Math.max(1,Math.round(sw/cs));
+  const nz=Math.max(1,Math.round(sd/cs));
+  const ny=Math.max(1,Math.round(cargoH/cs));
+  const cw=sw/nx,cd=sd/nz,ch=cargoH/ny;
+  const colorInt=hexToIntC(hexColor);
+  const edgeColor=rgbLightenC(hexColor,40);
+  const lum=0.299*((colorInt>>16)&0xff)+0.587*((colorInt>>8)&0xff)+0.114*(colorInt&0xff);
+  const dark=lum<140;
+  const texXface=makeBoxTexture2(palletName,hexColor,0,`${Math.round(cd)} cm`);
+  const texZface=makeBoxTexture2(palletName,hexColor,0,`${Math.round(cw)} cm`);
+  const texTop=makeBoxTexture2(palletName,hexColor,null,`${Math.round(cw)} cm`);
+  const ci=hexToIntC(hexColor);
+  const r0=(ci>>16)&0xff,g0=(ci>>8)&0xff,b0=ci&0xff;
+  const maxVis=Math.min(nx*nz*ny,200);
+  let drawn=0;
+  for(let iy=0;iy<ny&&drawn<maxVis;iy++){
+    const shade=(iy%2===0)?0:14;
+    const varColor=((Math.min(255,r0+shade))<<16)|((Math.min(255,g0+shade))<<8)|Math.min(255,b0+shade);
+    const fXmat=new THREE.MeshStandardMaterial({map:texXface,roughness:0.55,metalness:0.05});
+    const fZmat=new THREE.MeshStandardMaterial({map:texZface,roughness:0.55,metalness:0.05});
+    const fTop=new THREE.MeshStandardMaterial({map:texTop,roughness:0.55,metalness:0.05});
+    const fBot=new THREE.MeshStandardMaterial({color:varColor,roughness:0.6});
+    for(let iz=0;iz<nz&&drawn<maxVis;iz++){
+      for(let ix=0;ix<nx&&drawn<maxVis;ix++){
+        const bx=px+(ix+0.5)*cw,by=py+(iy+0.5)*ch,bz=pz+(iz+0.5)*cd;
+        const geo=new THREE.BoxGeometry(cw-0.8,ch-0.5,cd-0.8);
+        const mesh=new THREE.Mesh(geo,[fXmat,fXmat,fTop,fBot,fZmat,fZmat]);
+        mesh.position.set(bx,by,bz);mesh.castShadow=true;mesh.receiveShadow=true;
+        mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({color:edgeColor,transparent:true,opacity:0.55})));
+        group.add(mesh);drawn++;
+      }
+    }
+  }
+}
+
+function makeBoxTexture2(name,hexColor,arrowAngle,dimText){
+  const size=256;const cv=document.createElement('canvas');cv.width=size;cv.height=size;
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle=hexColor;ctx.fillRect(0,0,size,size);
+  const ci=parseInt(hexColor.replace('#',''),16);
+  const lum=0.299*((ci>>16)&0xff)+0.587*((ci>>8)&0xff)+0.114*(ci&0xff);
+  const dark=lum<140;
+  ctx.fillStyle=dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.06)';ctx.fillRect(0,0,size,size);
+  ctx.strokeStyle=dark?'rgba(255,255,255,0.28)':'rgba(0,0,0,0.22)';ctx.lineWidth=6;ctx.strokeRect(8,8,size-16,size-16);
+  const cs=18;ctx.lineWidth=4;
+  for(const[cx2,cy2,sx,sy]of[[10,10,1,1],[size-10,10,-1,1],[10,size-10,1,-1],[size-10,size-10,-1,-1]]){ctx.beginPath();ctx.moveTo(cx2,cy2+sy*cs);ctx.lineTo(cx2,cy2);ctx.lineTo(cx2+sx*cs,cy2);ctx.stroke();}
+  ctx.fillStyle=dark?'rgba(255,255,255,0.92)':'rgba(0,0,0,0.78)';
+  const words=name.toUpperCase().split(' ');const lines=[];let cur='';
+  for(const w of words){ctx.font='bold 26px monospace';const test=cur?cur+' '+w:w;if(ctx.measureText(test).width>size-36&&cur){lines.push(cur);cur=w;}else cur=test;}
+  if(cur)lines.push(cur);
+  const lineH=32,totalH=lines.length*lineH;
+  ctx.font='bold 24px monospace';ctx.textAlign='center';ctx.textBaseline='top';
+  lines.forEach((line,i)=>ctx.fillText(line,size/2,(size-totalH)/2+i*lineH));
+  if(dimText){ctx.font='bold 14px monospace';ctx.textAlign='center';ctx.textBaseline='bottom';ctx.fillStyle=dark?'rgba(255,255,255,0.70)':'rgba(0,0,0,0.55)';ctx.fillText(dimText,size/2,size-22);}
+  return new THREE.CanvasTexture(cv);
+}
+
+function buildPalletBlock(group,px,py,pz,sw,sd,cargoH,palletNum,hexColor,cartonCount,phase1Boxes){
+  buildWoodenBase(group,px,py,pz,sw,sd);
+  const pH=14.4;
+  if(phase1Boxes&&phase1Boxes.length>0){
+    // Render actual Phase 1 boxes with their original colors and positions
+    const p=PALLETS[currentPKey];
+    const rotated=Math.abs(sw-p.W)<1&&Math.abs(sd-p.L)<1; // footprint was swapped
+    const baseY=py+pH;
+    phase1Boxes.forEach((box,i)=>{
+      const colorInt=hexToIntC(box.color);
+      // Transform box position from pallet space to container space
+      let bx,bz;
+      if(rotated){bx=px+box.y;bz=pz+box.x;}
+      else{bx=px+box.x;bz=pz+box.y;}
+      const by=baseY+box.z;
+      const geo=new THREE.BoxGeometry(box.l-0.8,box.h-0.8,box.w-0.8);
+      const lum=0.299*((colorInt>>16)&0xff)+0.587*((colorInt>>8)&0xff)+0.114*(colorInt&0xff);
+      const texF=makeBoxTexture2(box.item.name,box.color,0,`${box.w}cm`);
+      const texT=makeBoxTexture2(box.item.name,box.color,null,`${box.l}cm`);
+      const matF=new THREE.MeshStandardMaterial({map:texF,roughness:0.55,metalness:0.05});
+      const matT=new THREE.MeshStandardMaterial({map:texT,roughness:0.55,metalness:0.05});
+      const matP=new THREE.MeshStandardMaterial({color:colorInt,roughness:0.55,metalness:0.05});
+      const mesh=new THREE.Mesh(geo,[matF,matF,matT,matP,matF,matF]);
+      mesh.position.set(bx+box.l/2,by+box.h/2,bz+box.w/2);
+      mesh.castShadow=true;mesh.receiveShadow=true;
+      mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({color:rgbLightenC(box.color,30),transparent:true,opacity:0.55})));
+      group.add(mesh);
+    });
+  } else {
+    buildCartonStack(group,px,py+pH,pz,sw,sd,cargoH,cartonCount,`Pallet #${palletNum}`,hexColor);
+  }
+}
+
+const C_PALLET_GAP=3; // cm gap between adjacent pallets at floor level
+
+function tryPlaceContainer(sw,sh,sd,placed,c){
+  const G=C_PALLET_GAP;
+  // Candidate positions: start + after each placed pallet + gap
+  const xs=[...new Set([0,...placed.map(p=>p.x+p.sw+G)])].filter(v=>v+sw<=c.W+0.01);
+  const zs=[...new Set([0,...placed.map(p=>p.z+p.sd+G)])].filter(v=>v+sd<=c.L+0.01);
+
+  function canPlace(x,y,z){
+    if(x<-0.01||z<-0.01||y<-0.01)return false;
+    if(x+sw>c.W+0.01||z+sd>c.L+0.01||y+sh>c.H+0.01)return false;
+    // Gap only enforced at floor level between pallets
+    const gap=y<0.01?G:0;
+    for(const p of placed){
+      if(x   <p.x +p.sw+gap-0.01&&
+         x+sw>p.x -gap    +0.01&&
+         z   <p.z +p.sd+gap-0.01&&
+         z+sd>p.z -gap    +0.01&&
+         y   <p.y +p.sh   -0.01&&
+         y+sh>p.y         +0.01)return false;
+    }
+    // If stacked (y>0), must be fully within a pallet below
+    if(y>0.01){
+      const below=placed.filter(p=>
+        Math.abs(p.y+p.sh-y)<0.5&&
+        p.x<=x+0.01&&p.x+p.sw>=x+sw-0.01&&
+        p.z<=z+0.01&&p.z+p.sd>=z+sd-0.01
+      );
+      if(below.length===0)return false;
+    }
+    return true;
+  }
+
+  // Floor positions — back to front (small Z first), left to right
+  for(const z of zs)for(const x of xs){
+    if(canPlace(x,0,z))return{x,y:0,z,sw,sh,sd};
+  }
+  // Stack positions
+  const stackable=placed.filter(p=>sw<=p.sw+0.01&&sd<=p.sd+0.01).sort((a,b)=>a.z-b.z||a.x-b.x);
+  for(const p of stackable){
+    const cy=p.y+p.sh;
+    for(const cx of[p.x,p.x+(p.sw-sw)])for(const cz of[p.z,p.z+(p.sd-sd)]){
+      if(cx<0||cz<0)continue;
+      if(canPlace(cx,cy,cz))return{x:cx,y:cy,z:cz,sw,sh,sd};
+    }
+  }
+  return null;
+}
+
+function selectBestContainer(allPalletsArr){
+  // Build pallet list for container packing
+  const palletList=allPalletsArr.map((boxes,idx)=>{
+    const wgt=boxes.reduce((s,b)=>s+b.item.weight,0);
+    const maxH=Math.round(boxes.reduce((s,b)=>Math.max(s,b.z+b.h),0));
+    const p=PALLETS[currentPKey];
+    return{id:idx+1,L:p.L,W:p.W,H:maxH+(p.palletH||14.4),weight:wgt,cartons:boxes.length,color:PALETTE[(idx)%PALETTE.length],boxes:boxes};
+  });
+  // Try each container type, pick fewest containers needed
+  let bestKey=null,bestCount=Infinity;
+  for(const[key,c]of Object.entries(CONTAINERS)){
+    let placed=[],weight=0,containers=1;
+    for(const pal of palletList){
+      const sh=pal.H;
+      const orientations=pal.L===pal.W?[[pal.L,pal.W]]:[[pal.L,pal.W],[pal.W,pal.L]];
+      let pos=null;
+      for(const[sw,sd]of orientations){if(sw>c.W+0.01||sd>c.L+0.01)continue;if(weight+pal.weight>c.maxKg)continue;pos=tryPlaceContainer(sw,sh,sd,placed,c);if(pos)break;}
+      if(!pos){containers++;placed=[];weight=0;for(const[sw,sd]of orientations){if(sw>c.W+0.01||sd>c.L+0.01)continue;pos=tryPlaceContainer(sw,sh,sd,placed,c);if(pos)break;}}
+      if(pos){placed.push({...pos,pallet:pal});weight+=pal.weight;}
+    }
+    if(containers<bestCount||(containers===bestCount&&c.L<CONTAINERS[bestKey].L)){bestCount=containers;bestKey=key;}
+  }
+  return bestKey||'40GP';
+}
+
+function fitPalletsInContainer(palletList, c){
+  // Try to pack palletList into ONE container of type c
+  // Returns placements array or null if they don't fit
+  const placed=[], weight=0;
+  let w=0;
+  for(const pal of palletList){
+    const sh=pal.H;
+    const orientations=pal.L===pal.W?[[pal.L,pal.W,sh]]:[[pal.L,pal.W,sh],[pal.W,pal.L,sh]];
+    let pos=null;
+    for(const[sw,sd,sshh]of orientations){
+      if(sw>c.W+0.01||sd>c.L+0.01)continue;
+      if(w+pal.weight>c.maxKg)continue;
+      pos=tryPlaceContainer(sw,sshh,sd,placed,c);
+      if(pos){pos.sw=sw;pos.sh=sshh;pos.sd=sd;break;}
+    }
+    if(!pos)return null; // doesn't fit
+    placed.push({...pos,pallet:pal});
+    w+=pal.weight;
+  }
+  return placed;
+}
+
+function smallestContainerFor(palletGroup){
+  // Try containers smallest first, return the smallest that fits
+  const order=['20GP','20HC','40GP','40HC'];
+  for(const key of order){
+    const result=fitPalletsInContainer(palletGroup,CONTAINERS[key]);
+    if(result)return{key,placements:result};
+  }
+  // Fallback — use largest
+  const key='40HC';
+  return{key,placements:fitPalletsInContainer(palletGroup,CONTAINERS[key])||[]};
+}
+
+function packAndStartContainerSim(){
+  currentCKey=selectBestContainer(allPallets); // for overall selection hint only
+  const p=PALLETS[currentPKey];
+  // Build pallet list
+  const palletList=allPallets.map((boxes,idx)=>{
+    const wgt=boxes.reduce((s,b)=>s+b.item.weight,0);
+    const maxH=Math.round(boxes.reduce((s,b)=>Math.max(s,b.z+b.h),0));
+    return{id:idx+1,L:p.L,W:p.W,H:maxH+(p.palletH||14.4),weight:wgt,cartons:boxes.length,color:PALETTE[idx%PALETTE.length],boxes:boxes};
+  });
+
+  // Pack greedily using best container type, then right-size each container
+  const bestC=CONTAINERS[currentCKey];
+  allContainers=[];containerScreenshots=[];
+  let remaining=[...palletList];
+
+  while(remaining.length>0){
+    // Find how many pallets fit in best container type
+    let placed=[],w=0,i=0;
+    for(;i<remaining.length;i++){
+      const pal=remaining[i];
+      const sh=pal.H;
+      const orientations=pal.L===pal.W?[[pal.L,pal.W,sh]]:[[pal.L,pal.W,sh],[pal.W,pal.L,sh]];
+      let pos=null;
+      for(const[sw,sd,sshh]of orientations){
+        if(sw>bestC.W+0.01||sd>bestC.L+0.01)continue;
+        if(w+pal.weight>bestC.maxKg)continue;
+        pos=tryPlaceContainer(sw,sshh,sd,placed,bestC);
+        if(pos){pos.sw=sw;pos.sh=sshh;pos.sd=sd;break;}
+      }
+      if(!pos)break;
+      placed.push({...pos,pallet:pal});w+=pal.weight;
+    }
+    if(placed.length===0)break; // safety
+    // Now right-size: try smallest container that fits exactly these pallets
+    const group=placed.map(pl=>pl.pallet);
+    const best=smallestContainerFor(group);
+    allContainers.push({placements:best.placements,weight:w,cKey:best.key});
+    remaining=remaining.slice(placed.length);
+  }
+  // Set currentCKey to the most common container type used
+  const keyCounts={};
+  allContainers.forEach(ct=>{keyCounts[ct.cKey]=(keyCounts[ct.cKey]||0)+1;});
+  currentCKey=Object.entries(keyCounts).sort((a,b)=>b[1]-a[1])[0][0];
+  // Switch phase
+  appPhase='container';
+  totalPalletsToLoad=palletList.length;
+  simPalletTotal=0;
+  currentContainerIdx=0;
+  // Hide pallet structure, build container
+  while(palletGroup.children.length)palletGroup.remove(palletGroup.children[0]);
+  buildContainer(CONTAINERS[currentCKey]);
+  updateStats();
+  renderStripThumbnails();
+  updatePackBtn('running');
+  simulateNextContainer(0);
+}
+
+// Container sequential animation state (separate from pallet phase)
+let cSeqQueue=[];
+let cSeqCurrentIdx=0;
+let cSeqDropMesh=null;
+let cSeqDropStart=null;
+const C_ANIM_DURATION=300;
+const C_ANIM_GAP=80;
+let simGeneration=0; // incremented on stop/clear to cancel stale timeouts
+
+function simulateNextContainer(idx){
+  if(idx>=allContainers.length){
+    seqIsRunning=false;seqIsPaused=false;pendingPalletIdx=-1;
+    updatePackBtn('idle');
+    currentContainerIdx=allContainers.length-1;
+    updateStats();renderStripThumbnails();
+    return;
+  }
+  if(seqIsPaused){pendingPalletIdx=idx;return;}
+  while(boxGroup.children.length)boxGroup.remove(boxGroup.children[0]);
+  currentContainerIdx=idx;cSeqCurrentIdx=0;cSeqDropMesh=null;cSeqDropStart=null;
+  seqIsRunning=true;
+  // Build queue
+  const ct=allContainers[idx];
+  const ctKey=ct.cKey||currentCKey;
+  const ctC=CONTAINERS[ctKey];
+  // Rebuild container scene for this specific container type
+  buildContainer(ctC);
+  let prevTotal=0;for(let ci=0;ci<idx;ci++)prevTotal+=allContainers[ci].placements.length;
+  cSeqQueue=ct.placements.map((pl,li)=>{
+    const group=new THREE.Group();
+    const pH=pl.pallet.H-(PALLETS[currentPKey].palletH||14.4);
+    buildPalletBlock(group,pl.x,pl.y,pl.z,pl.sw,pl.sd,pH,prevTotal+li+1,pl.pallet.color,pl.pallet.cartons,pl.pallet.boxes);
+    group.userData.startSceneZ=ctC.L;
+    return{group};
+  });
+  updateStats();renderStripThumbnails();scrollStripToActive();
+  document.getElementById('anim-progress').style.display='block';
+  const _sg=simGeneration;setTimeout(()=>dropNextContainerPallet(_sg),0);
+}
+
+function dropNextContainerPallet(gen){
+  if(gen!==simGeneration)return; // stale timeout — stop was clicked
+  if(seqIsPaused)return;
+  if(cSeqCurrentIdx>=cSeqQueue.length){
+    seqIsRunning=false;
+    renderer.render(scene,camera);
+    const g=simGeneration;
+    setTimeout(()=>{
+      if(g!==simGeneration)return;
+      containerScreenshots[currentContainerIdx]=renderer.domElement.toDataURL('image/jpeg',0.85);
+      renderStripThumbnails();
+      if(seqIsPaused){pendingPalletIdx=currentContainerIdx+1;return;}
+      const g2=simGeneration;
+      setTimeout(()=>{if(g2!==simGeneration)return;simulateNextContainer(currentContainerIdx+1);},600);
+    },80);
+    return;
+  }
+  const entry=cSeqQueue[cSeqCurrentIdx];
+  boxGroup.add(entry.group);
+  cSeqDropMesh=entry.group;
+  cSeqDropStart=null;
+  const pct=Math.round((simPalletTotal/totalPalletsToLoad)*100);
+  document.getElementById('anim-progress-bar').style.width=pct+'%';
+  updateStats();
+}
+
+function viewContainer(idx){
+  seqIsRunning=false;cSeqDropMesh=null;cSeqQueue=[];cSeqCurrentIdx=0;
+  document.getElementById('anim-progress').style.display='none';
+  currentContainerIdx=idx;
+  // Switch to container phase if not already
+  const ctKey=allContainers[idx]&&allContainers[idx].cKey?allContainers[idx].cKey:currentCKey;
+  appPhase='container';
+  while(palletGroup.children.length)palletGroup.remove(palletGroup.children[0]);
+  buildContainer(CONTAINERS[ctKey]);
+  const ct=allContainers[idx];
+  while(boxGroup.children.length)boxGroup.remove(boxGroup.children[0]);
+  let prevTotal=0;for(let ci=0;ci<idx;ci++)prevTotal+=allContainers[ci].placements.length;
+  ct.placements.forEach((pl,li)=>{
+    const group=new THREE.Group();
+    const pH=pl.pallet.H-(PALLETS[currentPKey].palletH||14.4);
+    buildPalletBlock(group,pl.x,pl.y,pl.z,pl.sw,pl.sd,Math.max(1,pH),prevTotal+li+1,pl.pallet.color,pl.pallet.cartons,pl.pallet.boxes);
+    boxGroup.add(group);
+  });
+  updateStats();
+  renderStripThumbnails();
+  captureCurrentView(thumb=>{containerScreenshots[idx]=thumb;renderStripThumbnails();});
+}
+
 // ── ANIMATION LOOP ───────────────────────────────────────────────────────────
 const clock=new THREE.Clock();
 let elapsed=0;
@@ -819,7 +1301,20 @@ function animate(){
       simCartonTotal++;
       updateStats();
       seqDropMesh=null;seqDropStart=null;seqCurrentIdx++;
-      setTimeout(dropNextInSequence,SPEEDS[animSpeed].gap);
+      const _pg=simGeneration;setTimeout(()=>dropNextInSequence(_pg),SPEEDS[animSpeed].gap);
+    }
+  }
+  // Container pallet slide-in animation
+  if(appPhase==='container'&&seqIsRunning&&cSeqDropMesh){
+    if(cSeqDropStart===null)cSeqDropStart=elapsed;
+    const t=Math.min(1,(elapsed-cSeqDropStart)/C_ANIM_DURATION);
+    const e=1-Math.pow(1-t,3);
+    const c=CONTAINERS[currentCKey];
+    cSeqDropMesh.position.z=(c.L)*(1-e);
+    if(t>=1){
+      cSeqDropMesh.position.z=0;cSeqDropMesh=null;cSeqDropStart=null;
+      cSeqCurrentIdx++;simPalletTotal++;
+      const _g=simGeneration;setTimeout(()=>dropNextContainerPallet(_g),C_ANIM_GAP);
     }
   }
   // Resize
@@ -949,6 +1444,17 @@ function captureThumbnailsAll(idx){
 }
 
 function packAll(){
+  simGeneration++; // cancel stale timeouts from previous run
+  // Ensure pallet scene if coming from container view
+  if(appPhase==='container'){
+    appPhase='pallet';
+    while(containerGroup.children.length)containerGroup.remove(containerGroup.children[0]);
+    while(boxGroup.children.length)boxGroup.remove(boxGroup.children[0]);
+    buildPallet(PALLETS[currentPKey]);
+    applySceneTheme(isDark?DARK_THEME:LIGHT_THEME);
+    renderer.setClearColor(isDark?0x0e0f11:0xf0ede8);
+  }
+  allContainers=[];containerScreenshots=[];currentContainerIdx=0;simPalletTotal=0;
   const p=PALLETS[currentPKey];
   allPallets=[];stripScreenshots=[];
   const failed=[];const expanded=[];
@@ -1033,12 +1539,15 @@ function scrollStripToActive(){
 
 function simulateNextPallet(idx){
   if(idx>=allPallets.length){
-    // All pallets done
+    // All pallets done → auto-start container loading
     seqIsRunning=false; seqIsPaused=false; pendingPalletIdx=-1;
-    updatePackBtn('idle');
     currentPalletIdx=allPallets.length-1;
     packedBoxes=allPallets[currentPalletIdx];
     updateStats(); renderStripThumbnails();
+    // Short pause then switch to container phase
+    setTimeout(()=>{
+      const _cg=simGeneration;if(_cg===simGeneration&&!seqIsPaused) packAndStartContainerSim();
+    }, 1500);
     return;
   }
 
@@ -1063,7 +1572,7 @@ function simulateNextPallet(idx){
       renderStripThumbnails();
       // Brief pause then move to next pallet
       if(seqIsPaused){pendingPalletIdx=idx+1;return;}
-      setTimeout(()=>simulateNextPallet(idx+1), 600);
+      const _spg=simGeneration;setTimeout(()=>{if(_spg===simGeneration)simulateNextPallet(idx+1);}, 600);
     },80);
   });
 }
@@ -1092,35 +1601,76 @@ function renderStripThumbnails(){
   const strip=document.getElementById('pallet-strip');
   const p=PALLETS[currentPKey];
   if(!allPallets.length){strip.innerHTML='<div id="pallet-strip-empty">&#8212; pack items to see pallet thumbnails &#8212;</div>';return;}
-  strip.innerHTML=allPallets.map((boxes,idx)=>{
+
+  // Pallet thumbnails
+  const palletHtml=allPallets.map((boxes,idx)=>{
     const wgt=boxes.reduce((s,b)=>s+b.item.weight,0);
     const maxH=boxes.reduce((s,b)=>Math.max(s,b.z+b.h),0);
     const hPct=Math.round(maxH/p.H*100);
-    const active=idx===currentPalletIdx;
+    const active=appPhase==='pallet'&&idx===currentPalletIdx;
     const img=stripScreenshots[idx]||'';
-    const isSimulating=!img&&idx===currentPalletIdx;
-    const isPending=!img&&idx>currentPalletIdx;
+    const isSimulating=appPhase==='pallet'&&!img&&idx===currentPalletIdx;
+    const isPending=appPhase==='pallet'&&!img&&idx>currentPalletIdx;
     let imgHtml;
-    if(img){
-      imgHtml=`<img class="pthumb-img" src="${img}" alt="Pallet ${idx+1}">`;
-    } else if(isSimulating){
-      imgHtml=`<div class="pthumb-img" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;">
-        <div style="font-family:var(--mono);font-size:9px;color:var(--accent);">&#9654; Simulating...</div>
-        <div style="width:80%;height:2px;background:var(--border);border-radius:1px;overflow:hidden;">
-          <div style="height:2px;background:var(--accent);width:${seqTotalBoxes?Math.round(seqCurrentIdx/seqTotalBoxes*100):0}%;transition:width 0.3s;"></div>
-        </div>
-      </div>`;
-    } else {
-      imgHtml=`<div class="pthumb-img" style="display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:var(--muted);">${isPending?'&#9711; Pending':''}</div>`;
-    }
-    return `<div class="pthumb${active?' active':''}" onclick="${img||isSimulating?`viewPallet(${idx})`:''}">
+    if(img){imgHtml=`<img class="pthumb-img" src="${img}" alt="Pallet ${idx+1}">`;}
+    else if(isSimulating){imgHtml=`<div class="pthumb-img" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;"><div style="font-family:var(--mono);font-size:9px;color:var(--accent);">&#9654; Simulating...</div><div style="width:80%;height:2px;background:var(--border);border-radius:1px;overflow:hidden;"><div style="height:2px;background:var(--accent);width:${seqTotalBoxes?Math.round(seqCurrentIdx/seqTotalBoxes*100):0}%;transition:width 0.3s;"></div></div></div>`;}
+    else{imgHtml=`<div class="pthumb-img" style="display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:var(--muted);">${isPending?'&#9711; Pending':''}</div>`;}
+    return `<div class="pthumb${active?' active':''}" onclick="${img||isSimulating?`viewPalletFromStrip(${idx})`:''}">
       ${imgHtml}
       <div class="pthumb-info">
         <div class="pthumb-title">Pallet #${idx+1}</div>
-        <div class="pthumb-stats">H:${hPct}% &middot; ${boxes.length} cartons &middot; ${wgt}kg</div>
+        <div class="pthumb-stats">H:${hPct}% &middot; ${boxes.length} ctns &middot; ${wgt}kg</div>
       </div>
     </div>`;
   }).join('');
+
+  // Divider + container thumbnails
+  let containerHtml='';
+  if(allContainers.length>0){
+    const c=CONTAINERS[currentCKey];
+    const divider=`<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;width:28px;height:155px;margin:0 4px;">
+      <div style="width:2px;height:60px;background:var(--border2);border-radius:1px;"></div>
+      <div style="font-family:var(--mono);font-size:8px;color:var(--muted);writing-mode:vertical-rl;padding:6px 0;letter-spacing:1px;text-transform:uppercase;">Container</div>
+      <div style="width:2px;height:60px;background:var(--border2);border-radius:1px;"></div>
+    </div>`;
+    containerHtml=divider+allContainers.map((ct,idx)=>{
+      const wgt=ct.weight;
+      const pals=ct.placements.length;
+      const active=appPhase==='container'&&idx===currentContainerIdx;
+      const img=containerScreenshots[idx]||'';
+      const isSimulating=appPhase==='container'&&!img&&idx===currentContainerIdx;
+      const isPending=appPhase==='container'&&!img&&idx>currentContainerIdx;
+      let imgHtml;
+      if(img){imgHtml=`<img class="pthumb-img" src="${img}" alt="Container ${idx+1}">`;}
+      else if(isSimulating){imgHtml=`<div class="pthumb-img" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;"><div style="font-family:var(--mono);font-size:9px;color:var(--blue);">&#9658; Loading...</div></div>`;}
+      else{imgHtml=`<div class="pthumb-img" style="display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:var(--muted);">${isPending?'&#9711; Pending':''}</div>`;}
+      return `<div class="pthumb${active?' active':''}${appPhase==='container'?' container-thumb':''}" style="${appPhase==='container'&&active?'border-color:var(--blue);':''}" onclick="${img?`viewContainer(${idx})`:''}">
+        ${imgHtml}
+        <div class="pthumb-info">
+          <div class="pthumb-title" style="${appPhase==='container'?'color:var(--blue);':''}">Cont. #${idx+1} <span style="font-size:8px;opacity:0.7;">${ct.cKey||''}</span></div>
+          <div class="pthumb-stats">${pals} pallets &middot; ${wgt}kg</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  strip.innerHTML=palletHtml+containerHtml;
+}
+
+function viewPalletFromStrip(idx){
+  if(appPhase==='container'){
+    // Switch back to pallet phase view
+    appPhase='pallet';
+    while(containerGroup.children.length)containerGroup.remove(containerGroup.children[0]);
+    buildPallet(PALLETS[currentPKey]);
+    applySceneTheme(isDark?DARK_THEME:LIGHT_THEME);
+    renderer.setClearColor(isDark?0x0e0f11:0xf0ede8);
+  }
+  seqIsRunning=false;cSeqDropMesh=null;
+  document.getElementById('anim-progress').style.display='none';
+  currentPalletIdx=idx;packedBoxes=allPallets[idx]||[];
+  updateStats();renderBoxesInstant(packedBoxes);renderStripThumbnails();
+  captureCurrentView(thumb=>{stripScreenshots[idx]=thumb;renderStripThumbnails();});
 }
 
 // ── STATE MANAGEMENT ──────────────────────────────────────────────────────────
@@ -1228,13 +1778,110 @@ function dismissNotice(){
 function loadSample(){
   clearAll();changePallet('wp110x110');
   const samples=[
-    {code:'ITM-001',name:'Heavy Base',l:55,w:55,h:35,weight:25,qty:4, color:'#a87fd4',upright:false},
-    {code:'ITM-002',name:'Mid Box',   l:55,w:55,h:30,weight:15,qty:12,color:'#4a8fd4',upright:false},
-    {code:'ITM-003',name:'Light Top', l:36,w:36,h:25,weight:5, qty:18,color:'#4cad72',upright:false},
+    {code:'IO575979',name:'Air Filter',l:55,w:55,h:35,weight:25,qty:11,color:'#4cad72',upright:false},
+    {code:'PO876979',name:'Oil Filter',l:45,w:45,h:30,weight:15,qty:28,color:'#4a8fd4',upright:false},
+    {code:'GL810582',name:'Fuel Filter',l:36,w:36,h:25,weight:5,qty:26,color:'#d46060',upright:false},
+    {code:'LM547303',name:'Cabin Air Filter',l:55,w:55,h:35,weight:25,qty:23,color:'#a87fd4',upright:false},
+    {code:'PK675466',name:'Spark Plug',l:45,w:45,h:30,weight:15,qty:25,color:'#c8a040',upright:false},
+    {code:'UD428322',name:'Ignition Coil',l:36,w:36,h:25,weight:5,qty:26,color:'#f0c040',upright:false},
+    {code:'GC434322',name:'Distributor Cap',l:55,w:55,h:35,weight:25,qty:30,color:'#d48860',upright:false},
+    {code:'ED564373',name:'Alternator',l:45,w:45,h:30,weight:15,qty:25,color:'#60a8d4',upright:false},
+    {code:'FK563463',name:'Starter Motor',l:36,w:36,h:25,weight:5,qty:22,color:'#80c870',upright:false},
+    {code:'JH663985',name:'Battery',l:55,w:55,h:35,weight:25,qty:25,color:'#6ab4d4',upright:false},
+    {code:'EI129635',name:'Radiator',l:45,w:45,h:30,weight:15,qty:27,color:'#4cad72',upright:false},
+    {code:'UA812604',name:'Radiator Cap',l:36,w:36,h:25,weight:5,qty:27,color:'#4a8fd4',upright:false},
+    {code:'IG328479',name:'Water Pump',l:55,w:55,h:35,weight:25,qty:24,color:'#d46060',upright:false},
+    {code:'EA601333',name:'Thermostat',l:45,w:45,h:30,weight:15,qty:30,color:'#a87fd4',upright:false},
+    {code:'LC872539',name:'Cooling Fan',l:36,w:36,h:25,weight:5,qty:21,color:'#c8a040',upright:false},
+    {code:'FO277203',name:'Fan Belt',l:55,w:55,h:35,weight:25,qty:25,color:'#f0c040',upright:false},
+    {code:'CB343758',name:'Timing Belt',l:45,w:45,h:30,weight:15,qty:30,color:'#d48860',upright:false},
+    {code:'TC297854',name:'Timing Chain',l:36,w:36,h:25,weight:5,qty:26,color:'#60a8d4',upright:false},
+    {code:'JN179559',name:'Serpentine Belt',l:55,w:55,h:35,weight:25,qty:27,color:'#80c870',upright:false},
+    {code:'CE163038',name:'Drive Belt',l:45,w:45,h:30,weight:15,qty:23,color:'#6ab4d4',upright:false},
+    {code:'CE786059',name:'Clutch Disc',l:36,w:36,h:25,weight:5,qty:24,color:'#4cad72',upright:false},
+    {code:'FB277933',name:'Clutch Pressure Plate',l:55,w:55,h:35,weight:25,qty:22,color:'#4a8fd4',upright:false},
+    {code:'NE238392',name:'Clutch Release Bearing',l:45,w:45,h:30,weight:15,qty:29,color:'#d46060',upright:false},
+    {code:'GF170515',name:'Flywheel',l:36,w:36,h:25,weight:5,qty:20,color:'#a87fd4',upright:false},
+    {code:'HO210332',name:'Gearbox',l:55,w:55,h:35,weight:25,qty:30,color:'#c8a040',upright:false},
+    {code:'AD145137',name:'Transmission Mount',l:45,w:45,h:30,weight:15,qty:25,color:'#f0c040',upright:false},
+    {code:'UJ847002',name:'Differential',l:36,w:36,h:25,weight:5,qty:21,color:'#d48860',upright:false},
+    {code:'JO174398',name:'Axle Shaft',l:55,w:55,h:35,weight:25,qty:29,color:'#60a8d4',upright:false},
+    {code:'HD397990',name:'CV Joint',l:45,w:45,h:30,weight:15,qty:24,color:'#80c870',upright:false},
+    {code:'QC866034',name:'Wheel Bearing',l:36,w:36,h:25,weight:5,qty:24,color:'#6ab4d4',upright:false},
+    {code:'QE364811',name:'Brake Pad',l:55,w:55,h:35,weight:25,qty:29,color:'#4cad72',upright:false},
+    {code:'CD218336',name:'Brake Shoe',l:45,w:45,h:30,weight:15,qty:23,color:'#4a8fd4',upright:false},
+    {code:'FK192362',name:'Brake Disc (Rotor)',l:36,w:36,h:25,weight:5,qty:24,color:'#d46060',upright:false},
+    {code:'MG520583',name:'Brake Drum',l:55,w:55,h:35,weight:25,qty:26,color:'#a87fd4',upright:false},
+    {code:'EH699199',name:'Brake Caliper',l:45,w:45,h:30,weight:15,qty:25,color:'#c8a040',upright:false},
+    {code:'EJ500313',name:'Brake Master Cylinder',l:36,w:36,h:25,weight:5,qty:29,color:'#f0c040',upright:false},
+    {code:'BO581885',name:'Brake Booster',l:55,w:55,h:35,weight:25,qty:24,color:'#d48860',upright:false},
+    {code:'AE279173',name:'ABS Sensor',l:45,w:45,h:30,weight:15,qty:28,color:'#60a8d4',upright:false},
+    {code:'QM278677',name:'Steering Wheel',l:36,w:36,h:25,weight:5,qty:29,color:'#80c870',upright:false},
+    {code:'EE802113',name:'Steering Column',l:55,w:55,h:35,weight:25,qty:22,color:'#6ab4d4',upright:false},
+    {code:'IM869429',name:'Steering Rack',l:45,w:45,h:30,weight:15,qty:28,color:'#4cad72',upright:false},
+    {code:'LF330220',name:'Tie Rod End',l:36,w:36,h:25,weight:5,qty:24,color:'#4a8fd4',upright:false},
+    {code:'NM193154',name:'Ball Joint',l:55,w:55,h:35,weight:25,qty:26,color:'#d46060',upright:false},
+    {code:'DO620895',name:'Control Arm',l:45,w:45,h:30,weight:15,qty:20,color:'#a87fd4',upright:false},
+    {code:'RD541918',name:'Shock Absorber',l:36,w:36,h:25,weight:5,qty:20,color:'#c8a040',upright:false},
+    {code:'SA692483',name:'Strut Assembly',l:55,w:55,h:35,weight:25,qty:25,color:'#f0c040',upright:false},
+    {code:'AM404962',name:'Leaf Spring',l:45,w:45,h:30,weight:15,qty:23,color:'#d48860',upright:false},
+    {code:'UP467679',name:'Coil Spring',l:36,w:36,h:25,weight:5,qty:22,color:'#60a8d4',upright:false},
+    {code:'TA134708',name:'Stabilizer Bar',l:55,w:55,h:35,weight:25,qty:20,color:'#80c870',upright:false},
+    {code:'AJ872051',name:'Sway Bar Link',l:45,w:45,h:30,weight:15,qty:26,color:'#6ab4d4',upright:false},
+    {code:'HO367627',name:'Exhaust Manifold',l:36,w:36,h:25,weight:5,qty:26,color:'#4cad72',upright:false},
+    {code:'GD473485',name:'Catalytic Converter',l:55,w:55,h:35,weight:25,qty:22,color:'#4a8fd4',upright:false},
+    {code:'OJ726498',name:'Muffler',l:45,w:45,h:30,weight:15,qty:20,color:'#d46060',upright:false},
+    {code:'SM304471',name:'Resonator',l:36,w:36,h:25,weight:5,qty:20,color:'#a87fd4',upright:false},
+    {code:'PK591873',name:'Exhaust Pipe',l:55,w:55,h:35,weight:25,qty:22,color:'#c8a040',upright:false},
+    {code:'OM382470',name:'Oxygen Sensor',l:45,w:45,h:30,weight:15,qty:20,color:'#f0c040',upright:false},
+    {code:'FA352984',name:'Turbocharger',l:36,w:36,h:25,weight:5,qty:30,color:'#d48860',upright:false},
+    {code:'KL737726',name:'Intercooler',l:55,w:55,h:35,weight:25,qty:30,color:'#60a8d4',upright:false},
+    {code:'PJ612602',name:'Air Intake Hose',l:45,w:45,h:30,weight:15,qty:22,color:'#80c870',upright:false},
+    {code:'CI406432',name:'Throttle Body',l:36,w:36,h:25,weight:5,qty:25,color:'#6ab4d4',upright:false},
+    {code:'BM881295',name:'EGR Valve',l:55,w:55,h:35,weight:25,qty:20,color:'#4cad72',upright:false},
+    {code:'LG882244',name:'PCV Valve',l:45,w:45,h:30,weight:15,qty:21,color:'#4a8fd4',upright:false},
+    {code:'BM566084',name:'Fuel Injector',l:36,w:36,h:25,weight:5,qty:25,color:'#d46060',upright:false},
+    {code:'DM333022',name:'Fuel Pump',l:55,w:55,h:35,weight:25,qty:20,color:'#a87fd4',upright:false},
+    {code:'EJ695920',name:'Fuel Rail',l:45,w:45,h:30,weight:15,qty:22,color:'#c8a040',upright:false},
+    {code:'FC563329',name:'Fuel Tank',l:36,w:36,h:25,weight:5,qty:20,color:'#f0c040',upright:false},
+    {code:'FM581091',name:'Fuel Pressure Regulator',l:55,w:55,h:35,weight:25,qty:28,color:'#d48860',upright:false},
+    {code:'SP136978',name:'Carburetor',l:45,w:45,h:30,weight:15,qty:27,color:'#60a8d4',upright:false},
+    {code:'KK255861',name:'Engine Mount',l:36,w:36,h:25,weight:5,qty:21,color:'#80c870',upright:false},
+    {code:'RE146179',name:'Cylinder Head',l:55,w:55,h:35,weight:25,qty:29,color:'#6ab4d4',upright:false},
+    {code:'BD403746',name:'Head Gasket',l:45,w:45,h:30,weight:15,qty:28,color:'#4cad72',upright:false},
+    {code:'SP486947',name:'Valve Cover',l:36,w:36,h:25,weight:5,qty:30,color:'#4a8fd4',upright:false},
+    {code:'DL117519',name:'Valve Spring',l:55,w:55,h:35,weight:25,qty:25,color:'#d46060',upright:false},
+    {code:'AD600783',name:'Camshaft',l:45,w:45,h:30,weight:15,qty:20,color:'#a87fd4',upright:false},
+    {code:'KB100221',name:'Crankshaft',l:36,w:36,h:25,weight:5,qty:22,color:'#c8a040',upright:false},
+    {code:'GO465405',name:'Piston',l:55,w:55,h:35,weight:25,qty:30,color:'#f0c040',upright:false},
+    {code:'LJ389186',name:'Piston Ring',l:45,w:45,h:30,weight:15,qty:29,color:'#d48860',upright:false},
+    {code:'BJ702226',name:'Connecting Rod',l:36,w:36,h:25,weight:5,qty:24,color:'#60a8d4',upright:false},
+    {code:'BP367677',name:'Oil Pan',l:55,w:55,h:35,weight:25,qty:27,color:'#80c870',upright:false},
+    {code:'EL117044',name:'Oil Pump',l:45,w:45,h:30,weight:15,qty:23,color:'#6ab4d4',upright:false},
+    {code:'GF504378',name:'Dipstick',l:36,w:36,h:25,weight:5,qty:24,color:'#4cad72',upright:false},
+    {code:'PM886182',name:'Timing Cover',l:55,w:55,h:35,weight:25,qty:28,color:'#4a8fd4',upright:false},
+    {code:'QK290120',name:'Engine Block',l:45,w:45,h:30,weight:15,qty:20,color:'#d46060',upright:false},
+    {code:'BF591415',name:'Headlight Assembly',l:36,w:36,h:25,weight:5,qty:22,color:'#a87fd4',upright:false},
+    {code:'PJ736093',name:'Tail Light Assembly',l:55,w:55,h:35,weight:25,qty:24,color:'#c8a040',upright:false},
+    {code:'CL117920',name:'Fog Light',l:45,w:45,h:30,weight:15,qty:23,color:'#f0c040',upright:false},
+    {code:'OC632269',name:'Turn Signal Light',l:36,w:36,h:25,weight:5,qty:24,color:'#d48860',upright:false},
+    {code:'IH806889',name:'Brake Light Switch',l:55,w:55,h:35,weight:25,qty:29,color:'#60a8d4',upright:false},
+    {code:'PF726766',name:'Wiper Blade',l:45,w:45,h:30,weight:15,qty:22,color:'#80c870',upright:false},
+    {code:'AA884937',name:'Wiper Motor',l:36,w:36,h:25,weight:5,qty:23,color:'#6ab4d4',upright:false},
+    {code:'OO763406',name:'Windshield Washer Pump',l:55,w:55,h:35,weight:25,qty:21,color:'#4cad72',upright:false},
+    {code:'LK113220',name:'Side Mirror',l:45,w:45,h:30,weight:15,qty:30,color:'#4a8fd4',upright:false},
+    {code:'EE710447',name:'Rearview Mirror',l:36,w:36,h:25,weight:5,qty:26,color:'#d46060',upright:false},
+    {code:'NI469009',name:'Door Handle',l:55,w:55,h:35,weight:25,qty:21,color:'#a87fd4',upright:false},
+    {code:'EC731056',name:'Door Lock Actuator',l:45,w:45,h:30,weight:15,qty:21,color:'#c8a040',upright:false},
+    {code:'SB743996',name:'Window Regulator',l:36,w:36,h:25,weight:5,qty:28,color:'#f0c040',upright:false},
+    {code:'CF629770',name:'Window Motor',l:45,w:45,h:30,weight:15,qty:29,color:'#d48860',upright:false},
+    {code:'LM542956',name:'Seat Belt',l:36,w:36,h:25,weight:5,qty:20,color:'#60a8d4',upright:false},
+    {code:'UG823998',name:'Airbag Module',l:45,w:45,h:30,weight:15,qty:25,color:'#80c870',upright:false},
+    {code:'OD479869',name:'Instrument Cluster',l:36,w:36,h:25,weight:5,qty:25,color:'#6ab4d4',upright:false}
   ];
   for(const s of samples)cargoItems.push({id:++itemId,...s});
   renderManifest();packAll();
-  const totalBoxes=samples.reduce((s,x)=>s+x.qty,0);
+  const totalBoxes=samples.reduce((s,x)=>s+x.qty,0); // 100 items
   const spd=SPEEDS[animSpeed];
   const animMs=totalBoxes*(spd.duration+spd.gap)+1000;
   const notice=document.getElementById('sample-notice');
@@ -1243,9 +1890,20 @@ function loadSample(){
 }
 
 function clearAll(){
+  simGeneration++;
+  const wasContainer = appPhase==='container';
   seqIsRunning=false;seqIsPaused=false;seqDropMesh=null;seqMeshQueue=[];seqCurrentIdx=0;simCartonTotal=0;pendingPalletIdx=-1;
+  cSeqDropMesh=null;cSeqQueue=[];cSeqCurrentIdx=0;cSeqDropStart=null;
+  allContainers=[];containerScreenshots=[];currentContainerIdx=0;simPalletTotal=0;appPhase='pallet';
+  while(containerGroup.children.length)containerGroup.remove(containerGroup.children[0]);
   document.getElementById('anim-progress').style.display='none';
   updatePackBtn('idle');
+  // Rebuild pallet scene if we were in container view
+  if(wasContainer){
+    buildPallet(PALLETS[currentPKey]);
+    applySceneTheme(isDark?DARK_THEME:LIGHT_THEME);
+    renderer.setClearColor(isDark?0x0e0f11:0xf0ede8);
+  }
   cargoItems=[];allPallets=[];packedBoxes=[];palIdx=1;stripScreenshots=[];
   while(boxGroup.children.length)boxGroup.remove(boxGroup.children[0]);
   document.getElementById('warn-overlay').textContent='';
@@ -1275,30 +1933,49 @@ function renderManifest(){
 }
 
 function updateStats(){
-  const p=PALLETS[currentPKey];
-  const usedWgt=packedBoxes.reduce((s,b)=>s+b.item.weight,0);
-  const maxH=packedBoxes.reduce((s,b)=>Math.max(s,b.z+b.h),0);
-  const totalCartons=cargoItems.reduce((s,it)=>s+it.qty,0);
-  const totalPallets=allPallets.length||0;
-  const simPallet=totalPallets>0?currentPalletIdx+1:0;
-  const packedCartons=simCartonTotal;
-  const hCm=Math.round(maxH);
-  const hPct=Math.round(maxH/p.H*100);
-  const wgtPct=Math.round(usedWgt/p.maxKg*100);
-  const palPct=totalPallets>0?Math.round(simPallet/totalPallets*100):0;
-  const cartonPct=totalCartons?Math.round(packedCartons/totalCartons*100):0;
   const setVal=(id,val,cls)=>{const el=document.getElementById(id);if(el){el.textContent=val;el.className='stat-ov-val '+cls;}};
   const setBar=(id,pct,cls)=>{const el=document.getElementById(id);if(el){el.style.width=Math.min(100,pct)+'%';el.className='stat-ov-fill '+cls;}};
-  const hCls=hPct>=90?'warn':hPct>=60?'good':'';
-  const wCls=wgtPct>=90?'warn':wgtPct>=60?'good':'';
-  setVal('sv',hCm+' cm',hCls);
-  setVal('sw',usedWgt.toLocaleString()+' kgs',wCls);
-  setVal('sp',simPallet+' of '+totalPallets,palPct>=100?'good':'');
-  setVal('sc',packedCartons+' of '+totalCartons,cartonPct>=100?'good':'');
-  setBar('sv-bar',hPct,hCls);
-  setBar('sw-bar',wgtPct,wCls);
-  setBar('sp-bar',palPct,palPct>=100?'good':'');
-  setBar('sc-bar',cartonPct,cartonPct>=100?'good':'');
+  const setLbl=(id,txt)=>{const el=document.getElementById(id);if(el)el.textContent=txt;};
+  const setUnit=(id,txt)=>{const el=document.getElementById(id);if(el)el.textContent=txt;};
+
+  if(appPhase==='container'&&allContainers.length>0){
+    // ── Container phase stats ──
+    const c=CONTAINERS[currentCKey];
+    const ct=allContainers[currentContainerIdx]||{placements:[],weight:0};
+    const loadedH=ct.placements.length?Math.round(Math.max(...ct.placements.map(pl=>pl.y+pl.sh))):0;
+    const hPct=Math.round(loadedH/c.H*100);
+    const wgtPct=Math.round(ct.weight/c.maxKg*100);
+    const totalConts=allContainers.length;
+    const simCont=currentContainerIdx+1;
+    const contPct=Math.round(simCont/totalConts*100);
+    const palPct=totalPalletsToLoad?Math.round(simPalletTotal/totalPalletsToLoad*100):0;
+    const hCls=hPct>=90?'warn':hPct>=60?'good':'';
+    const wCls=wgtPct>=90?'warn':wgtPct>=60?'good':'';
+    setLbl('stat-lbl-sv','Container H');setVal('sv',loadedH+' cm',hCls);setBar('sv-bar',hPct,hCls);
+    setLbl('stat-lbl-sw','Total Weight');setVal('sw',ct.weight.toLocaleString()+' kgs',wCls);setBar('sw-bar',wgtPct,wCls);
+    setLbl('stat-lbl-sp','Containers');setVal('sp',simCont+' of '+totalConts,contPct>=100?'good':'');setUnit('sp-unit','containers');setBar('sp-bar',contPct,contPct>=100?'good':'');
+    setLbl('stat-lbl-sc','Pallets');setVal('sc',simPalletTotal+' of '+totalPalletsToLoad,palPct>=100?'good':'');setUnit('sc-unit','pallets');setBar('sc-bar',palPct,palPct>=100?'good':'');
+  } else {
+    // ── Pallet phase stats ──
+    const p=PALLETS[currentPKey];
+    const usedWgt=packedBoxes.reduce((s,b)=>s+b.item.weight,0);
+    const maxH=packedBoxes.reduce((s,b)=>Math.max(s,b.z+b.h),0);
+    const totalCartons=cargoItems.reduce((s,it)=>s+it.qty,0);
+    const totalPals=allPallets.length||0;
+    const simPal=totalPals>0?currentPalletIdx+1:0;
+    const packedCartons=simCartonTotal;
+    const hCm=Math.round(maxH);
+    const hPct=Math.round(maxH/p.H*100);
+    const wgtPct=Math.round(usedWgt/p.maxKg*100);
+    const palPct=totalPals>0?Math.round(simPal/totalPals*100):0;
+    const cartonPct=totalCartons?Math.round(packedCartons/totalCartons*100):0;
+    const hCls=hPct>=90?'warn':hPct>=60?'good':'';
+    const wCls=wgtPct>=90?'warn':wgtPct>=60?'good':'';
+    setLbl('stat-lbl-sv','Pallet Height');setVal('sv',hCm+' cm',hCls);setBar('sv-bar',hPct,hCls);
+    setLbl('stat-lbl-sw','Total Weight');setVal('sw',usedWgt.toLocaleString()+' kgs',wCls);setBar('sw-bar',wgtPct,wCls);
+    setLbl('stat-lbl-sp','Palletizing');setVal('sp',simPal+' of '+totalPals,palPct>=100?'good':'');setUnit('sp-unit','pallets');setBar('sp-bar',palPct,palPct>=100?'good':'');
+    setLbl('stat-lbl-sc','Stacking');setVal('sc',packedCartons+' of '+totalCartons,cartonPct>=100?'good':'');setUnit('sc-unit','cartons');setBar('sc-bar',cartonPct,cartonPct>=100?'good':'');
+  }
 }
 
 // ── THEME ─────────────────────────────────────────────────────────────────────
