@@ -91,6 +91,21 @@ canvas#three{display:block;width:100%!important;height:100%!important;}
 #vscroll-thumb{position:absolute;left:2px;width:10px;background:var(--border2);border-radius:5px;cursor:pointer;min-height:40px;transition:background 0.15s;}
 #vscroll-thumb:hover,#vscroll-thumb.dragging{background:var(--muted);}
 
+/* Custom wrapping tooltip */
+[data-tooltip]{position:relative;}
+[data-tooltip]::before{
+  content:attr(data-tooltip);
+  position:absolute;bottom:calc(100% + 8px);right:0;
+  background:rgba(20,22,30,0.96);color:#e0e2e8;
+  font-family:var(--mono);font-size:10px;line-height:1.55;
+  padding:8px 11px;border-radius:5px;border:1px solid rgba(255,255,255,0.18);
+  width:210px;white-space:normal;word-break:keep-all;
+  pointer-events:none;opacity:0;transition:opacity 0.2s;
+  z-index:9999;box-shadow:0 4px 14px rgba(0,0,0,0.5);
+  text-align:left;
+}
+[data-tooltip]:hover::before{opacity:1;}
+
 #cam-hint{position:absolute;bottom:10px;left:14px;font-family:var(--mono);font-size:10px;
   color:var(--muted);letter-spacing:1px;pointer-events:none;line-height:1.8;}
 #cam-hint span{color:var(--accent);}
@@ -120,7 +135,7 @@ canvas#three{display:block;width:100%!important;height:100%!important;}
 #sidebar-scroll{flex:1;overflow-y:auto;overflow-x:hidden;}
 #sidebar-scroll::-webkit-scrollbar{width:3px;}
 #sidebar-scroll::-webkit-scrollbar-thumb{background:var(--border2);}
-.section{padding:12px 14px;border-bottom:1px solid var(--border);}
+.section{padding:12px 14px;border-bottom:1px solid var(--border2);}
 .section-title{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);
   font-family:var(--mono);margin-bottom:9px;}
 
@@ -244,7 +259,7 @@ html.light #theme-toggle-thumb{left:16px;}
 <div id="topbar">
   <div id="topbar-title">Pallet</div>
   <div id="pallet-type-cards"></div>
-  <button class="topbar-btn" id="add-pallet-btn" onclick="toggleAddPalletPopover()">+ Custom</button>
+  <button class="topbar-btn" id="add-pallet-btn" onclick="toggleAddPalletPopover()">+ Add Pallet</button>
   <button class="topbar-btn" id="export-pdf-btn" onclick="exportPDF()">&#8595; PDF</button>
   <div id="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
     <div id="theme-toggle-track"><div id="theme-toggle-thumb"></div></div>
@@ -299,7 +314,7 @@ html.light #theme-toggle-thumb{left:16px;}
     <div id="pallet-type-overlay"></div>
     <div id="weight-tol-overlay">
       <div class="wt-label">Weight Tolerance</div>
-      <div class="wt-row">
+      <div class="wt-row" data-tooltip="Allow upper box to exceed lower box weight by this amount (kg). Set 0 for strict — heavier cartons must always be at the bottom.">
         <input type="number" id="weightTolerance" value="0" min="0" max="100" step="1">
         <span class="wt-unit">kg</span>
       </div>
@@ -377,7 +392,7 @@ html.light #theme-toggle-thumb{left:16px;}
     <!-- Pack -->
     <div class="section">
       <div class="btn-row">
-        <button class="btn primary" id="btn-pack" onclick="togglePackPause()">&#9654; Pack Pallets</button>
+        <button class="btn primary" id="btn-pack" onclick="togglePackPause()">&#9654; Simulate</button>
         <button class="btn" id="btn-stop" onclick="stopSimulation()" style="display:none;background:#5a7a9a;color:#fff;">&#9632; Stop</button>
         <button class="btn danger" onclick="clearAll()">&#10005; Clear</button>
       </div>
@@ -570,7 +585,7 @@ function buildPallet(p){
   const gg=new THREE.BufferGeometry();gg.setAttribute('position',new THREE.Float32BufferAttribute(gpts,3));
   palletGroup.add(new THREE.LineSegments(gg,new THREE.LineBasicMaterial({color:0x2a3a28,opacity:0.5,transparent:true})));
   // Ground
-  const ground=new THREE.Mesh(new THREE.PlaneGeometry(L*5,W*5),new THREE.MeshStandardMaterial({color:0x141620,roughness:1.0}));
+  const ground=new THREE.Mesh(new THREE.PlaneGeometry(600,600),new THREE.MeshStandardMaterial({color:isDark?0x141620:0xd8d4cc,roughness:1.0}));
   ground.rotation.x=-Math.PI/2;ground.position.y=-pH;ground.receiveShadow=true;palletGroup.add(ground);
 
   buildGrid(p);
@@ -691,12 +706,14 @@ function startSequentialAnim(boxes,onComplete){
 }
 
 function dropNextInSequence(gen){
+  if(stopRequested)return;
   if(gen!==undefined&&gen!==simGeneration)return;
   if(seqIsPaused){return;}
   if(seqCurrentIdx>=seqTotalBoxes){
     seqIsRunning=false;
     document.getElementById('anim-progress').style.display='none';
-    if(seqOnComplete)seqOnComplete();
+    const cb=seqOnComplete; seqOnComplete=null; // clear before calling
+    if(cb)cb();
     return;
   }
   const entry=seqMeshQueue[seqCurrentIdx];
@@ -829,36 +846,36 @@ function buildContainer(c){
   const hW=c.W/2,hL=c.L/2,hH=c.H/2;
   boxGroup.position.set(-hW,0,-hL);
   // Floor
-  const floor=new THREE.Mesh(new THREE.BoxGeometry(c.W,3,c.L),new THREE.MeshStandardMaterial({color:0x1a1d22,roughness:0.95,metalness:0.05}));
+  const floor=new THREE.Mesh(new THREE.BoxGeometry(c.W,3,c.L),new THREE.MeshStandardMaterial({color:0x3d1f00,roughness:0.95,metalness:0.05}));
   floor.position.set(0,-1.5,0);floor.receiveShadow=true;containerGroup.add(floor);
   // Floor grid lines
-  const lineMat=new THREE.LineBasicMaterial({color:0x2a2e38,transparent:true,opacity:0.6});
+  const lineMat=new THREE.LineBasicMaterial({color:0x4a2400,transparent:true,opacity:0.7});
   const steps=Math.ceil(c.L/30);
   for(let i=0;i<=steps;i++){const zp=-hL+(i/steps)*c.L;const pts=[-hW,0.1,zp,hW,0.1,zp];const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));containerGroup.add(new THREE.Line(g,lineMat));}
   // Back wall
-  const bwMat=new THREE.MeshStandardMaterial({color:0x1e222c,roughness:0.9,metalness:0.05,transparent:true,opacity:0.85});
+  const bwMat=new THREE.MeshStandardMaterial({color:0xc45a00,roughness:0.85,metalness:0.15,transparent:false});
   const backWall=new THREE.Mesh(new THREE.BoxGeometry(c.W,c.H,4),bwMat);
   backWall.position.set(0,hH,-hL-2);containerGroup.add(backWall);
   // Side walls + roof (semi-transparent)
-  const wallMat=new THREE.MeshStandardMaterial({color:0x1e2638,roughness:0.8,metalness:0.15,transparent:true,opacity:0.18,side:THREE.DoubleSide});
+  const wallMat=new THREE.MeshStandardMaterial({color:0xd4660a,roughness:0.8,metalness:0.15,transparent:true,opacity:0.28,side:THREE.DoubleSide});
   const lWall=new THREE.Mesh(new THREE.BoxGeometry(3,c.H,c.L),wallMat.clone());lWall.position.set(-hW-1.5,hH,0);containerGroup.add(lWall);
   const rWall=new THREE.Mesh(new THREE.BoxGeometry(3,c.H,c.L),wallMat.clone());rWall.position.set(hW+1.5,hH,0);containerGroup.add(rWall);
-  const roofMat=new THREE.MeshStandardMaterial({color:0x1e2638,roughness:0.7,metalness:0.2,transparent:true,opacity:0.14,side:THREE.DoubleSide});
+  const roofMat=new THREE.MeshStandardMaterial({color:0xd4660a,roughness:0.7,metalness:0.15,transparent:true,opacity:0.22,side:THREE.DoubleSide});
   const roof=new THREE.Mesh(new THREE.BoxGeometry(c.W,3,c.L),roofMat);roof.position.set(0,c.H+1.5,0);containerGroup.add(roof);
-  const doorMat=new THREE.MeshStandardMaterial({color:0x2a3850,roughness:0.7,metalness:0.1,transparent:true,opacity:0.06,side:THREE.DoubleSide});
+  const doorMat=new THREE.MeshStandardMaterial({color:0xd4660a,roughness:0.7,metalness:0.15,transparent:true,opacity:0.10,side:THREE.DoubleSide});
   const door=new THREE.Mesh(new THREE.BoxGeometry(c.W,c.H,2),doorMat);door.position.set(0,hH,hL+1);containerGroup.add(door);
   // Edge wireframe
   const edgePts=[];
   const edgeDefs=[[[-hW,0,-hL],[hW,0,-hL]],[[hW,0,-hL],[hW,0,hL]],[[hW,0,hL],[-hW,0,hL]],[[-hW,0,hL],[-hW,0,-hL]],[[-hW,c.H,-hL],[hW,c.H,-hL]],[[hW,c.H,-hL],[hW,c.H,hL]],[[hW,c.H,hL],[-hW,c.H,hL]],[[-hW,c.H,hL],[-hW,c.H,-hL]],[[-hW,0,-hL],[-hW,c.H,-hL]],[[hW,0,-hL],[hW,c.H,-hL]],[[hW,0,hL],[hW,c.H,hL]],[[-hW,0,hL],[-hW,c.H,hL]]];
   for(const[a,b]of edgeDefs)edgePts.push(...a,...b);
   const edgeGeo=new THREE.BufferGeometry();edgeGeo.setAttribute('position',new THREE.Float32BufferAttribute(edgePts,3));
-  containerGroup.add(new THREE.LineSegments(edgeGeo,new THREE.LineBasicMaterial({color:0x3a4a5a,opacity:0.8,transparent:true})));
+  containerGroup.add(new THREE.LineSegments(edgeGeo,new THREE.LineBasicMaterial({color:0xd4660a,opacity:0.85,transparent:true})));
   // Corner posts
-  const postMat=new THREE.MeshStandardMaterial({color:0x2e3e52,roughness:0.5,metalness:0.7});
+  const postMat=new THREE.MeshStandardMaterial({color:0xa04800,roughness:0.5,metalness:0.6});
   for(const[ex,ez]of[[-1,-1],[-1,1],[1,-1],[1,1]]){
     const post=new THREE.Mesh(new THREE.BoxGeometry(5,c.H,5),postMat.clone());post.position.set(ex*hW,hH,ez*hL);containerGroup.add(post);
-    const fit=new THREE.Mesh(new THREE.BoxGeometry(8,6,8),new THREE.MeshStandardMaterial({color:0x4a5a6a,metalness:0.8}));fit.position.set(ex*hW,c.H+3,ez*hL);containerGroup.add(fit);
-    const fitB=new THREE.Mesh(new THREE.BoxGeometry(8,6,8),new THREE.MeshStandardMaterial({color:0x4a5a6a,metalness:0.8}));fitB.position.set(ex*hW,-3,ez*hL);containerGroup.add(fitB);
+    const fit=new THREE.Mesh(new THREE.BoxGeometry(8,6,8),new THREE.MeshStandardMaterial({color:0x7a3800,metalness:0.7}));fit.position.set(ex*hW,c.H+3,ez*hL);containerGroup.add(fit);
+    const fitB=new THREE.Mesh(new THREE.BoxGeometry(8,6,8),new THREE.MeshStandardMaterial({color:0x7a3800,metalness:0.7}));fitB.position.set(ex*hW,-3,ez*hL);containerGroup.add(fitB);
   }
   // Grid
   while(gridGroup.children.length)gridGroup.remove(gridGroup.children[0]);
@@ -917,16 +934,54 @@ function buildContainerDimensions(c){
   hMesh.rotation.y=Math.PI/2;hMesh.position.set(hx-hLabelW*0.6,H/2,hz);dimGroup.add(hMesh);
 }
 
-function buildWoodenBase(group,px,py,pz,sw,sd){
+function buildWoodenBase(group,px,py,pz,sw,sd,palL,palW){
+  // palL/palW = actual pallet L and W dimensions
+  // sw in X direction, sd in Z direction
+  // Boards always run in W direction (perpendicular to forks)
+  // Stringers always run in L direction (parallel to forks)
   const pH=14.4,hw=sw/2,hd=sd/2,cx=px+hw,cz=pz+hd,topY=py+pH;
   const woodMat=new THREE.MeshStandardMaterial({color:0xc4a464,roughness:0.9,metalness:0.0});
   const darkMat=new THREE.MeshStandardMaterial({color:0x8b6830,roughness:0.9,metalness:0.0});
-  const topBH=2.4,numBoards=7,boardGapL=sw/numBoards,boardThick=boardGapL*0.68;
-  for(let i=0;i<numBoards;i++){const bx=(i/(numBoards-1)-0.5)*(sw-boardThick);const m=new THREE.Mesh(new THREE.BoxGeometry(boardThick,topBH,sd),woodMat.clone());m.position.set(cx+bx,topY-topBH/2,cz);m.receiveShadow=true;group.add(m);}
-  const stringerH=pH-topBH-4.8,stringerW=Math.min(14,sd*0.14);
-  for(const szOff of[0,-(hd-stringerW/2),hd-stringerW/2]){const m=new THREE.Mesh(new THREE.BoxGeometry(sw,stringerH,stringerW),darkMat.clone());m.position.set(cx,topY-topBH-stringerH/2,cz+szOff);m.castShadow=true;m.receiveShadow=true;group.add(m);}
-  const botBH=4.8,botW=Math.min(boardThick*2,sw/3*0.75);
-  for(let i=0;i<3;i++){const bx=(i/2-0.5)*(sw-botW);const m=new THREE.Mesh(new THREE.BoxGeometry(botW,botBH,sd),woodMat.clone());m.position.set(cx+bx,py+botBH/2,cz);m.castShadow=true;m.receiveShadow=true;group.add(m);}
+  // Determine if L is in X or Z direction
+  // lInX=true: L runs in X (board sides face door) — NOT what we want
+  // lInX=false: W runs in X (board ends face door) — correct fork-entry view
+  // For square pallets force lInX=false; for non-square detect from sw
+  const lInX=(!palL||!palW)?false:(palL!==palW&&Math.abs(sw-palL)<1);
+  // boardDir: direction boards span (W direction), spacingDir: direction boards are spaced (L direction)
+  const boardSpan = lInX ? sd : sw;   // boards span in W direction
+  const boardSpace = lInX ? sw : sd;  // boards spaced along L direction
+  const topBH=2.4,numBoards=7,boardGap=boardSpace/numBoards,boardThick=boardGap*0.68;
+  for(let i=0;i<numBoards;i++){
+    const off=(i/(numBoards-1)-0.5)*(boardSpace-boardThick);
+    let m;
+    if(lInX){// L in X: boards spaced in X, span in Z
+      m=new THREE.Mesh(new THREE.BoxGeometry(boardThick,topBH,boardSpan),woodMat.clone());
+      m.position.set(cx+off,topY-topBH/2,cz);
+    }else{// W in X: boards spaced in Z, span in X
+      m=new THREE.Mesh(new THREE.BoxGeometry(boardSpan,topBH,boardThick),woodMat.clone());
+      m.position.set(cx,topY-topBH/2,cz+off);
+    }
+    m.receiveShadow=true;group.add(m);
+  }
+  // Stringers run in L direction, 3 rows in W direction
+  const stringerH=pH-topBH-4.8;
+  if(lInX){// L in X: stringers run in X, spaced in Z
+    const stringerW2=Math.min(14,sd*0.14);
+    for(const szOff of[0,-(hd-stringerW2/2),hd-stringerW2/2]){
+      const m=new THREE.Mesh(new THREE.BoxGeometry(sw,stringerH,stringerW2),darkMat.clone());
+      m.position.set(cx,topY-topBH-stringerH/2,cz+szOff);m.castShadow=true;m.receiveShadow=true;group.add(m);
+    }
+    const botBH=4.8,botW=Math.min(boardThick*2,sw/3*0.75);
+    for(let i=0;i<3;i++){const bx=(i/2-0.5)*(sw-botW);const m=new THREE.Mesh(new THREE.BoxGeometry(botW,botBH,sd),woodMat.clone());m.position.set(cx+bx,py+botBH/2,cz);m.castShadow=true;m.receiveShadow=true;group.add(m);}
+  }else{// W in X: stringers run in Z, spaced in X
+    const stringerW2=Math.min(14,sw*0.14);
+    for(const sxOff of[0,-(hw-stringerW2/2),hw-stringerW2/2]){
+      const m=new THREE.Mesh(new THREE.BoxGeometry(stringerW2,stringerH,sd),darkMat.clone());
+      m.position.set(cx+sxOff,topY-topBH-stringerH/2,cz);m.castShadow=true;m.receiveShadow=true;group.add(m);
+    }
+    const botBH=4.8,botW=Math.min(boardThick*2,sd/3*0.75);
+    for(let i=0;i<3;i++){const bz=(i/2-0.5)*(sd-botW);const m=new THREE.Mesh(new THREE.BoxGeometry(sw,botBH,botW),woodMat.clone());m.position.set(cx,py+botBH/2,cz+bz);m.castShadow=true;m.receiveShadow=true;group.add(m);}
+  }
 }
 
 function buildCartonStack(group,px,py,pz,sw,sd,cargoH,cartonCount,palletName,hexColor){
@@ -994,29 +1049,39 @@ function makeBoxTexture2(name,hexColor,arrowAngle,dimText){
 }
 
 function buildPalletBlock(group,px,py,pz,sw,sd,cargoH,palletNum,hexColor,cartonCount,phase1Boxes){
-  buildWoodenBase(group,px,py,pz,sw,sd);
+  const p=PALLETS[currentPKey];
+  buildWoodenBase(group,px,py,pz,sw,sd,p.L,p.W);
   const pH=14.4;
   if(phase1Boxes&&phase1Boxes.length>0){
-    // Render actual Phase 1 boxes with their original colors and positions
     const p=PALLETS[currentPKey];
-    const rotated=Math.abs(sw-p.W)<1&&Math.abs(sd-p.L)<1; // footprint was swapped
+    // Only treat as rotated for non-square pallets where sw matches p.W and sd matches p.L
+    const rotated=p.L!==p.W && Math.abs(sw-p.L)<1 && Math.abs(sd-p.W)<1;
     const baseY=py+pH;
     phase1Boxes.forEach((box,i)=>{
       const colorInt=hexToIntC(box.color);
-      // Transform box position from pallet space to container space
-      let bx,bz;
-      if(rotated){bx=px+box.y;bz=pz+box.x;}
-      else{bx=px+box.x;bz=pz+box.y;}
+      let bx,bz,gl,gw,cx,cz;
+      if(rotated){
+        // Rotated: sw=L across X, sd=W faces camera (Z)
+        bx=px+box.x; bz=pz+box.y;
+        gl=box.l; gw=box.w;
+        cx=bx+box.l/2; cz=bz+box.w/2;
+      } else {
+        // Standard: sw=W across X (visible face), sd=L depth Z
+        // box.y (pallet W) → container X; box.x (pallet L) → container Z
+        bx=px+box.y; bz=pz+box.x;
+        gl=box.w; gw=box.l;
+        cx=bx+box.w/2; cz=bz+box.l/2;
+      }
       const by=baseY+box.z;
-      const geo=new THREE.BoxGeometry(box.l-0.8,box.h-0.8,box.w-0.8);
-      const lum=0.299*((colorInt>>16)&0xff)+0.587*((colorInt>>8)&0xff)+0.114*(colorInt&0xff);
-      const texF=makeBoxTexture2(box.item.name,box.color,0,`${box.w}cm`);
-      const texT=makeBoxTexture2(box.item.name,box.color,null,`${box.l}cm`);
+      const geo=new THREE.BoxGeometry(gl-0.8,box.h-0.8,gw-0.8);
+      const colorInt2=hexToIntC(box.color);
+      const texF=makeBoxTexture2(box.item.name,box.color,0,`${gw}cm`);
+      const texT=makeBoxTexture2(box.item.name,box.color,null,`${gl}cm`);
       const matF=new THREE.MeshStandardMaterial({map:texF,roughness:0.55,metalness:0.05});
       const matT=new THREE.MeshStandardMaterial({map:texT,roughness:0.55,metalness:0.05});
-      const matP=new THREE.MeshStandardMaterial({color:colorInt,roughness:0.55,metalness:0.05});
+      const matP=new THREE.MeshStandardMaterial({color:colorInt2,roughness:0.55,metalness:0.05});
       const mesh=new THREE.Mesh(geo,[matF,matF,matT,matP,matF,matF]);
-      mesh.position.set(bx+box.l/2,by+box.h/2,bz+box.w/2);
+      mesh.position.set(cx,by+box.h/2,cz);
       mesh.castShadow=true;mesh.receiveShadow=true;
       mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),
         new THREE.LineBasicMaterial({color:rgbLightenC(box.color,30),transparent:true,opacity:0.55})));
@@ -1090,7 +1155,7 @@ function selectBestContainer(allPalletsArr){
     let placed=[],weight=0,containers=1;
     for(const pal of palletList){
       const sh=pal.H;
-      const orientations=pal.L===pal.W?[[pal.L,pal.W]]:[[pal.L,pal.W],[pal.W,pal.L]];
+      const orientations=pal.L===pal.W?[[pal.W,pal.L]]:[[pal.W,pal.L],[pal.L,pal.W]];
       let pos=null;
       for(const[sw,sd]of orientations){if(sw>c.W+0.01||sd>c.L+0.01)continue;if(weight+pal.weight>c.maxKg)continue;pos=tryPlaceContainer(sw,sh,sd,placed,c);if(pos)break;}
       if(!pos){containers++;placed=[];weight=0;for(const[sw,sd]of orientations){if(sw>c.W+0.01||sd>c.L+0.01)continue;pos=tryPlaceContainer(sw,sh,sd,placed,c);if(pos)break;}}
@@ -1108,7 +1173,7 @@ function fitPalletsInContainer(palletList, c){
   let w=0;
   for(const pal of palletList){
     const sh=pal.H;
-    const orientations=pal.L===pal.W?[[pal.L,pal.W,sh]]:[[pal.L,pal.W,sh],[pal.W,pal.L,sh]];
+    const orientations=pal.L===pal.W?[[pal.W,pal.L,sh]]:[[pal.W,pal.L,sh],[pal.L,pal.W,sh]];
     let pos=null;
     for(const[sw,sd,sshh]of orientations){
       if(sw>c.W+0.01||sd>c.L+0.01)continue;
@@ -1156,7 +1221,7 @@ function packAndStartContainerSim(){
     for(;i<remaining.length;i++){
       const pal=remaining[i];
       const sh=pal.H;
-      const orientations=pal.L===pal.W?[[pal.L,pal.W,sh]]:[[pal.L,pal.W,sh],[pal.W,pal.L,sh]];
+      const orientations=pal.L===pal.W?[[pal.W,pal.L,sh]]:[[pal.W,pal.L,sh],[pal.L,pal.W,sh]];
       let pos=null;
       for(const[sw,sd,sshh]of orientations){
         if(sw>bestC.W+0.01||sd>bestC.L+0.01)continue;
@@ -1200,8 +1265,10 @@ let cSeqDropStart=null;
 const C_ANIM_DURATION=300;
 const C_ANIM_GAP=80;
 let simGeneration=0; // incremented on stop/clear to cancel stale timeouts
+let stopRequested=false; // true when stop/clear is clicked — blocks all callbacks
 
 function simulateNextContainer(idx){
+  if(stopRequested)return; // stop was clicked
   if(idx>=allContainers.length){
     seqIsRunning=false;seqIsPaused=false;pendingPalletIdx=-1;
     updatePackBtn('idle');
@@ -1233,7 +1300,8 @@ function simulateNextContainer(idx){
 }
 
 function dropNextContainerPallet(gen){
-  if(gen!==simGeneration)return; // stale timeout — stop was clicked
+  if(stopRequested)return;
+  if(gen!==simGeneration)return;
   if(seqIsPaused)return;
   if(cSeqCurrentIdx>=cSeqQueue.length){
     seqIsRunning=false;
@@ -1259,6 +1327,7 @@ function dropNextContainerPallet(gen){
 }
 
 function viewContainer(idx){
+  if(seqIsRunning||seqIsPaused)return; // blocked during simulation
   seqIsRunning=false;cSeqDropMesh=null;cSeqQueue=[];cSeqCurrentIdx=0;
   document.getElementById('anim-progress').style.display='none';
   currentContainerIdx=idx;
@@ -1365,7 +1434,7 @@ function updatePackBtn(state){
   const btn = document.getElementById('btn-pack');
   const stop = document.getElementById('btn-stop');
   if(state==='idle'){
-    btn.innerHTML='&#9654; Pack Pallets';
+    btn.innerHTML='&#9654; Simulate';
     btn.style.background='';btn.style.color='';
     btn.classList.add('primary');
     stop.style.display='none';
@@ -1411,7 +1480,11 @@ function togglePackPause(){
 
 function stopSimulation(){
   // Halt animation immediately — keep only completed pallets in strip
+  simGeneration++;
+  stopRequested=true;
   seqIsRunning=false;seqIsPaused=false;seqDropMesh=null;
+  seqOnComplete=null;
+  cSeqDropMesh=null;cSeqQueue=[];cSeqCurrentIdx=0;
   seqMeshQueue=[];seqCurrentIdx=0;pendingPalletIdx=-1;
   document.getElementById('anim-progress').style.display='none';
   // Clear current in-progress pallet from 3D view
@@ -1444,7 +1517,8 @@ function captureThumbnailsAll(idx){
 }
 
 function packAll(){
-  simGeneration++; // cancel stale timeouts from previous run
+  simGeneration++;
+  stopRequested=false; // new simulation starting
   // Ensure pallet scene if coming from container view
   if(appPhase==='container'){
     appPhase='pallet';
@@ -1538,15 +1612,18 @@ function scrollStripToActive(){
 }
 
 function simulateNextPallet(idx){
+  if(stopRequested)return; // stop was clicked
   if(idx>=allPallets.length){
     // All pallets done → auto-start container loading
     seqIsRunning=false; seqIsPaused=false; pendingPalletIdx=-1;
     currentPalletIdx=allPallets.length-1;
     packedBoxes=allPallets[currentPalletIdx];
     updateStats(); renderStripThumbnails();
-    // Short pause then switch to container phase
+    // Short pause then switch to container phase — capture generation NOW
+    const _genA=simGeneration;
     setTimeout(()=>{
-      const _cg=simGeneration;if(_cg===simGeneration&&!seqIsPaused) packAndStartContainerSim();
+      if(_genA!==simGeneration||seqIsPaused)return; // stop was clicked
+      packAndStartContainerSim();
     }, 1500);
     return;
   }
@@ -1561,18 +1638,22 @@ function simulateNextPallet(idx){
   renderStripThumbnails();
   scrollStripToActive();
 
-  // Show label
-
   // Animate this pallet box by box
   startSequentialAnim(allPallets[idx],()=>{
     // Animation complete — capture screenshot
+    if(stopRequested)return;
+    const _genB=simGeneration;
     renderer.render(scene,camera);
     setTimeout(()=>{
+      if(stopRequested||_genB!==simGeneration)return;
       stripScreenshots[idx]=renderer.domElement.toDataURL('image/jpeg',0.85);
       renderStripThumbnails();
-      // Brief pause then move to next pallet
       if(seqIsPaused){pendingPalletIdx=idx+1;return;}
-      const _spg=simGeneration;setTimeout(()=>{if(_spg===simGeneration)simulateNextPallet(idx+1);}, 600);
+      const _genC=simGeneration;
+      setTimeout(()=>{
+        if(_genC!==simGeneration)return; // stop was clicked during 600ms gap
+        simulateNextPallet(idx+1);
+      }, 600);
     },80);
   });
 }
@@ -1585,6 +1666,7 @@ function captureCurrentView(callback){
 }
 
 function viewPallet(idx){
+  if(seqIsRunning||seqIsPaused)return; // blocked during simulation
   // Stop any running simulation
   seqIsRunning=false; seqDropMesh=null; seqMeshQueue=[]; seqCurrentIdx=0;
   document.getElementById('anim-progress').style.display='none';
@@ -1615,7 +1697,7 @@ function renderStripThumbnails(){
     if(img){imgHtml=`<img class="pthumb-img" src="${img}" alt="Pallet ${idx+1}">`;}
     else if(isSimulating){imgHtml=`<div class="pthumb-img" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;"><div style="font-family:var(--mono);font-size:9px;color:var(--accent);">&#9654; Simulating...</div><div style="width:80%;height:2px;background:var(--border);border-radius:1px;overflow:hidden;"><div style="height:2px;background:var(--accent);width:${seqTotalBoxes?Math.round(seqCurrentIdx/seqTotalBoxes*100):0}%;transition:width 0.3s;"></div></div></div>`;}
     else{imgHtml=`<div class="pthumb-img" style="display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:var(--muted);">${isPending?'&#9711; Pending':''}</div>`;}
-    return `<div class="pthumb${active?' active':''}" onclick="${img||isSimulating?`viewPalletFromStrip(${idx})`:''}">
+    return `<div class="pthumb${active?' active':''}" onclick="${(!seqIsRunning&&!seqIsPaused)&&(img||isSimulating)?`viewPalletFromStrip(${idx})`:''}" style="cursor:${(!seqIsRunning&&!seqIsPaused)&&(img||isSimulating)?'pointer':'default'}">
       ${imgHtml}
       <div class="pthumb-info">
         <div class="pthumb-title">Pallet #${idx+1}</div>
@@ -1658,6 +1740,7 @@ function renderStripThumbnails(){
 }
 
 function viewPalletFromStrip(idx){
+  if(seqIsRunning||seqIsPaused)return; // blocked during simulation
   if(appPhase==='container'){
     // Switch back to pallet phase view
     appPhase='pallet';
@@ -1691,6 +1774,12 @@ function updatePalletTypeOverlay(){
 function changePallet(key){
   currentPKey=key;const p=PALLETS[key];
   allPallets=[];packedBoxes=[];stripScreenshots=[];
+  allContainers=[];containerScreenshots=[];simPalletTotal=0;
+  // Clear container scene if in container phase
+  if(appPhase==='container'){
+    appPhase='pallet';
+    while(containerGroup.children.length)containerGroup.remove(containerGroup.children[0]);
+  }
   while(boxGroup.children.length)boxGroup.remove(boxGroup.children[0]);
   buildPallet(p);applySceneTheme(isDark?DARK_THEME:LIGHT_THEME);
   renderer.setClearColor(isDark?0x0e0f11:0xf0ede8);
@@ -1778,106 +1867,21 @@ function dismissNotice(){
 function loadSample(){
   clearAll();changePallet('wp110x110');
   const samples=[
-    {code:'IO575979',name:'Air Filter',l:55,w:55,h:35,weight:25,qty:11,color:'#4cad72',upright:false},
-    {code:'PO876979',name:'Oil Filter',l:45,w:45,h:30,weight:15,qty:28,color:'#4a8fd4',upright:false},
-    {code:'GL810582',name:'Fuel Filter',l:36,w:36,h:25,weight:5,qty:26,color:'#d46060',upright:false},
-    {code:'LM547303',name:'Cabin Air Filter',l:55,w:55,h:35,weight:25,qty:23,color:'#a87fd4',upright:false},
-    {code:'PK675466',name:'Spark Plug',l:45,w:45,h:30,weight:15,qty:25,color:'#c8a040',upright:false},
-    {code:'UD428322',name:'Ignition Coil',l:36,w:36,h:25,weight:5,qty:26,color:'#f0c040',upright:false},
-    {code:'GC434322',name:'Distributor Cap',l:55,w:55,h:35,weight:25,qty:30,color:'#d48860',upright:false},
-    {code:'ED564373',name:'Alternator',l:45,w:45,h:30,weight:15,qty:25,color:'#60a8d4',upright:false},
-    {code:'FK563463',name:'Starter Motor',l:36,w:36,h:25,weight:5,qty:22,color:'#80c870',upright:false},
-    {code:'JH663985',name:'Battery',l:55,w:55,h:35,weight:25,qty:25,color:'#6ab4d4',upright:false},
-    {code:'EI129635',name:'Radiator',l:45,w:45,h:30,weight:15,qty:27,color:'#4cad72',upright:false},
-    {code:'UA812604',name:'Radiator Cap',l:36,w:36,h:25,weight:5,qty:27,color:'#4a8fd4',upright:false},
-    {code:'IG328479',name:'Water Pump',l:55,w:55,h:35,weight:25,qty:24,color:'#d46060',upright:false},
-    {code:'EA601333',name:'Thermostat',l:45,w:45,h:30,weight:15,qty:30,color:'#a87fd4',upright:false},
-    {code:'LC872539',name:'Cooling Fan',l:36,w:36,h:25,weight:5,qty:21,color:'#c8a040',upright:false},
-    {code:'FO277203',name:'Fan Belt',l:55,w:55,h:35,weight:25,qty:25,color:'#f0c040',upright:false},
-    {code:'CB343758',name:'Timing Belt',l:45,w:45,h:30,weight:15,qty:30,color:'#d48860',upright:false},
-    {code:'TC297854',name:'Timing Chain',l:36,w:36,h:25,weight:5,qty:26,color:'#60a8d4',upright:false},
-    {code:'JN179559',name:'Serpentine Belt',l:55,w:55,h:35,weight:25,qty:27,color:'#80c870',upright:false},
-    {code:'CE163038',name:'Drive Belt',l:45,w:45,h:30,weight:15,qty:23,color:'#6ab4d4',upright:false},
-    {code:'CE786059',name:'Clutch Disc',l:36,w:36,h:25,weight:5,qty:24,color:'#4cad72',upright:false},
-    {code:'FB277933',name:'Clutch Pressure Plate',l:55,w:55,h:35,weight:25,qty:22,color:'#4a8fd4',upright:false},
-    {code:'NE238392',name:'Clutch Release Bearing',l:45,w:45,h:30,weight:15,qty:29,color:'#d46060',upright:false},
-    {code:'GF170515',name:'Flywheel',l:36,w:36,h:25,weight:5,qty:20,color:'#a87fd4',upright:false},
-    {code:'HO210332',name:'Gearbox',l:55,w:55,h:35,weight:25,qty:30,color:'#c8a040',upright:false},
-    {code:'AD145137',name:'Transmission Mount',l:45,w:45,h:30,weight:15,qty:25,color:'#f0c040',upright:false},
-    {code:'UJ847002',name:'Differential',l:36,w:36,h:25,weight:5,qty:21,color:'#d48860',upright:false},
-    {code:'JO174398',name:'Axle Shaft',l:55,w:55,h:35,weight:25,qty:29,color:'#60a8d4',upright:false},
-    {code:'HD397990',name:'CV Joint',l:45,w:45,h:30,weight:15,qty:24,color:'#80c870',upright:false},
-    {code:'QC866034',name:'Wheel Bearing',l:36,w:36,h:25,weight:5,qty:24,color:'#6ab4d4',upright:false},
-    {code:'QE364811',name:'Brake Pad',l:55,w:55,h:35,weight:25,qty:29,color:'#4cad72',upright:false},
-    {code:'CD218336',name:'Brake Shoe',l:45,w:45,h:30,weight:15,qty:23,color:'#4a8fd4',upright:false},
-    {code:'FK192362',name:'Brake Disc (Rotor)',l:36,w:36,h:25,weight:5,qty:24,color:'#d46060',upright:false},
-    {code:'MG520583',name:'Brake Drum',l:55,w:55,h:35,weight:25,qty:26,color:'#a87fd4',upright:false},
-    {code:'EH699199',name:'Brake Caliper',l:45,w:45,h:30,weight:15,qty:25,color:'#c8a040',upright:false},
-    {code:'EJ500313',name:'Brake Master Cylinder',l:36,w:36,h:25,weight:5,qty:29,color:'#f0c040',upright:false},
-    {code:'BO581885',name:'Brake Booster',l:55,w:55,h:35,weight:25,qty:24,color:'#d48860',upright:false},
-    {code:'AE279173',name:'ABS Sensor',l:45,w:45,h:30,weight:15,qty:28,color:'#60a8d4',upright:false},
-    {code:'QM278677',name:'Steering Wheel',l:36,w:36,h:25,weight:5,qty:29,color:'#80c870',upright:false},
-    {code:'EE802113',name:'Steering Column',l:55,w:55,h:35,weight:25,qty:22,color:'#6ab4d4',upright:false},
-    {code:'IM869429',name:'Steering Rack',l:45,w:45,h:30,weight:15,qty:28,color:'#4cad72',upright:false},
-    {code:'LF330220',name:'Tie Rod End',l:36,w:36,h:25,weight:5,qty:24,color:'#4a8fd4',upright:false},
-    {code:'NM193154',name:'Ball Joint',l:55,w:55,h:35,weight:25,qty:26,color:'#d46060',upright:false},
-    {code:'DO620895',name:'Control Arm',l:45,w:45,h:30,weight:15,qty:20,color:'#a87fd4',upright:false},
-    {code:'RD541918',name:'Shock Absorber',l:36,w:36,h:25,weight:5,qty:20,color:'#c8a040',upright:false},
-    {code:'SA692483',name:'Strut Assembly',l:55,w:55,h:35,weight:25,qty:25,color:'#f0c040',upright:false},
-    {code:'AM404962',name:'Leaf Spring',l:45,w:45,h:30,weight:15,qty:23,color:'#d48860',upright:false},
-    {code:'UP467679',name:'Coil Spring',l:36,w:36,h:25,weight:5,qty:22,color:'#60a8d4',upright:false},
-    {code:'TA134708',name:'Stabilizer Bar',l:55,w:55,h:35,weight:25,qty:20,color:'#80c870',upright:false},
-    {code:'AJ872051',name:'Sway Bar Link',l:45,w:45,h:30,weight:15,qty:26,color:'#6ab4d4',upright:false},
-    {code:'HO367627',name:'Exhaust Manifold',l:36,w:36,h:25,weight:5,qty:26,color:'#4cad72',upright:false},
-    {code:'GD473485',name:'Catalytic Converter',l:55,w:55,h:35,weight:25,qty:22,color:'#4a8fd4',upright:false},
-    {code:'OJ726498',name:'Muffler',l:45,w:45,h:30,weight:15,qty:20,color:'#d46060',upright:false},
-    {code:'SM304471',name:'Resonator',l:36,w:36,h:25,weight:5,qty:20,color:'#a87fd4',upright:false},
-    {code:'PK591873',name:'Exhaust Pipe',l:55,w:55,h:35,weight:25,qty:22,color:'#c8a040',upright:false},
-    {code:'OM382470',name:'Oxygen Sensor',l:45,w:45,h:30,weight:15,qty:20,color:'#f0c040',upright:false},
-    {code:'FA352984',name:'Turbocharger',l:36,w:36,h:25,weight:5,qty:30,color:'#d48860',upright:false},
-    {code:'KL737726',name:'Intercooler',l:55,w:55,h:35,weight:25,qty:30,color:'#60a8d4',upright:false},
-    {code:'PJ612602',name:'Air Intake Hose',l:45,w:45,h:30,weight:15,qty:22,color:'#80c870',upright:false},
-    {code:'CI406432',name:'Throttle Body',l:36,w:36,h:25,weight:5,qty:25,color:'#6ab4d4',upright:false},
-    {code:'BM881295',name:'EGR Valve',l:55,w:55,h:35,weight:25,qty:20,color:'#4cad72',upright:false},
-    {code:'LG882244',name:'PCV Valve',l:45,w:45,h:30,weight:15,qty:21,color:'#4a8fd4',upright:false},
-    {code:'BM566084',name:'Fuel Injector',l:36,w:36,h:25,weight:5,qty:25,color:'#d46060',upright:false},
-    {code:'DM333022',name:'Fuel Pump',l:55,w:55,h:35,weight:25,qty:20,color:'#a87fd4',upright:false},
-    {code:'EJ695920',name:'Fuel Rail',l:45,w:45,h:30,weight:15,qty:22,color:'#c8a040',upright:false},
-    {code:'FC563329',name:'Fuel Tank',l:36,w:36,h:25,weight:5,qty:20,color:'#f0c040',upright:false},
-    {code:'FM581091',name:'Fuel Pressure Regulator',l:55,w:55,h:35,weight:25,qty:28,color:'#d48860',upright:false},
-    {code:'SP136978',name:'Carburetor',l:45,w:45,h:30,weight:15,qty:27,color:'#60a8d4',upright:false},
-    {code:'KK255861',name:'Engine Mount',l:36,w:36,h:25,weight:5,qty:21,color:'#80c870',upright:false},
-    {code:'RE146179',name:'Cylinder Head',l:55,w:55,h:35,weight:25,qty:29,color:'#6ab4d4',upright:false},
-    {code:'BD403746',name:'Head Gasket',l:45,w:45,h:30,weight:15,qty:28,color:'#4cad72',upright:false},
-    {code:'SP486947',name:'Valve Cover',l:36,w:36,h:25,weight:5,qty:30,color:'#4a8fd4',upright:false},
-    {code:'DL117519',name:'Valve Spring',l:55,w:55,h:35,weight:25,qty:25,color:'#d46060',upright:false},
-    {code:'AD600783',name:'Camshaft',l:45,w:45,h:30,weight:15,qty:20,color:'#a87fd4',upright:false},
-    {code:'KB100221',name:'Crankshaft',l:36,w:36,h:25,weight:5,qty:22,color:'#c8a040',upright:false},
-    {code:'GO465405',name:'Piston',l:55,w:55,h:35,weight:25,qty:30,color:'#f0c040',upright:false},
-    {code:'LJ389186',name:'Piston Ring',l:45,w:45,h:30,weight:15,qty:29,color:'#d48860',upright:false},
-    {code:'BJ702226',name:'Connecting Rod',l:36,w:36,h:25,weight:5,qty:24,color:'#60a8d4',upright:false},
-    {code:'BP367677',name:'Oil Pan',l:55,w:55,h:35,weight:25,qty:27,color:'#80c870',upright:false},
-    {code:'EL117044',name:'Oil Pump',l:45,w:45,h:30,weight:15,qty:23,color:'#6ab4d4',upright:false},
-    {code:'GF504378',name:'Dipstick',l:36,w:36,h:25,weight:5,qty:24,color:'#4cad72',upright:false},
-    {code:'PM886182',name:'Timing Cover',l:55,w:55,h:35,weight:25,qty:28,color:'#4a8fd4',upright:false},
-    {code:'QK290120',name:'Engine Block',l:45,w:45,h:30,weight:15,qty:20,color:'#d46060',upright:false},
-    {code:'BF591415',name:'Headlight Assembly',l:36,w:36,h:25,weight:5,qty:22,color:'#a87fd4',upright:false},
-    {code:'PJ736093',name:'Tail Light Assembly',l:55,w:55,h:35,weight:25,qty:24,color:'#c8a040',upright:false},
-    {code:'CL117920',name:'Fog Light',l:45,w:45,h:30,weight:15,qty:23,color:'#f0c040',upright:false},
-    {code:'OC632269',name:'Turn Signal Light',l:36,w:36,h:25,weight:5,qty:24,color:'#d48860',upright:false},
-    {code:'IH806889',name:'Brake Light Switch',l:55,w:55,h:35,weight:25,qty:29,color:'#60a8d4',upright:false},
-    {code:'PF726766',name:'Wiper Blade',l:45,w:45,h:30,weight:15,qty:22,color:'#80c870',upright:false},
-    {code:'AA884937',name:'Wiper Motor',l:36,w:36,h:25,weight:5,qty:23,color:'#6ab4d4',upright:false},
-    {code:'OO763406',name:'Windshield Washer Pump',l:55,w:55,h:35,weight:25,qty:21,color:'#4cad72',upright:false},
-    {code:'LK113220',name:'Side Mirror',l:45,w:45,h:30,weight:15,qty:30,color:'#4a8fd4',upright:false},
-    {code:'EE710447',name:'Rearview Mirror',l:36,w:36,h:25,weight:5,qty:26,color:'#d46060',upright:false},
-    {code:'NI469009',name:'Door Handle',l:55,w:55,h:35,weight:25,qty:21,color:'#a87fd4',upright:false},
-    {code:'EC731056',name:'Door Lock Actuator',l:45,w:45,h:30,weight:15,qty:21,color:'#c8a040',upright:false},
-    {code:'SB743996',name:'Window Regulator',l:36,w:36,h:25,weight:5,qty:28,color:'#f0c040',upright:false},
-    {code:'CF629770',name:'Window Motor',l:45,w:45,h:30,weight:15,qty:29,color:'#d48860',upright:false},
-    {code:'LM542956',name:'Seat Belt',l:36,w:36,h:25,weight:5,qty:20,color:'#60a8d4',upright:false},
-    {code:'UG823998',name:'Airbag Module',l:45,w:45,h:30,weight:15,qty:25,color:'#80c870',upright:false},
-    {code:'OD479869',name:'Instrument Cluster',l:36,w:36,h:25,weight:5,qty:25,color:'#6ab4d4',upright:false}
+    {code:'CE163038',name:'Drive Belt',l:36,w:36,h:30,weight:15,qty:23,color:'#4cad72',upright:false},
+    {code:'CD218336',name:'Brake Shoe',l:36,w:36,h:30,weight:15,qty:23,color:'#4a8fd4',upright:false},
+    {code:'AJ872051',name:'Sway Bar Link',l:36,w:36,h:30,weight:15,qty:26,color:'#d46060',upright:false},
+    {code:'OM382470',name:'Oxygen Sensor',l:36,w:36,h:30,weight:15,qty:20,color:'#a87fd4',upright:false},
+    {code:'FA352984',name:'Turbocharger',l:36,w:36,h:30,weight:15,qty:30,color:'#c8a040',upright:false},
+    {code:'KL737726',name:'Intercooler',l:36,w:36,h:30,weight:15,qty:30,color:'#f0c040',upright:false},
+    {code:'KB100221',name:'Crankshaft',l:36,w:36,h:30,weight:15,qty:22,color:'#d48860',upright:false},
+    {code:'GO465405',name:'Piston',l:36,w:36,h:30,weight:15,qty:30,color:'#60a8d4',upright:false},
+    {code:'LJ389186',name:'Piston Ring',l:36,w:27,h:25,weight:15,qty:29,color:'#80c870',upright:false},
+    {code:'BJ702226',name:'Connecting Rod',l:36,w:27,h:25,weight:15,qty:24,color:'#6ab4d4',upright:false},
+    {code:'GF504378',name:'Dipstick',l:36,w:27,h:25,weight:15,qty:24,color:'#4cad72',upright:false},
+    {code:'PJ736093',name:'Tail Light Assembly',l:36,w:27,h:25,weight:15,qty:24,color:'#4a8fd4',upright:false},
+    {code:'IH806889',name:'Brake Light Switch',l:36,w:27,h:25,weight:15,qty:29,color:'#d46060',upright:false},
+    {code:'PF726766',name:'Wiper Blade',l:36,w:27,h:25,weight:15,qty:22,color:'#a87fd4',upright:false},
+    {code:'NI469009',name:'Door Handle',l:36,w:27,h:25,weight:15,qty:21,color:'#c8a040',upright:false}
   ];
   for(const s of samples)cargoItems.push({id:++itemId,...s});
   renderManifest();packAll();
@@ -1891,8 +1895,11 @@ function loadSample(){
 
 function clearAll(){
   simGeneration++;
+  stopRequested=true;
   const wasContainer = appPhase==='container';
-  seqIsRunning=false;seqIsPaused=false;seqDropMesh=null;seqMeshQueue=[];seqCurrentIdx=0;simCartonTotal=0;pendingPalletIdx=-1;
+  seqIsRunning=false;seqIsPaused=false;seqDropMesh=null;
+  seqOnComplete=null;
+  seqMeshQueue=[];seqCurrentIdx=0;simCartonTotal=0;pendingPalletIdx=-1;
   cSeqDropMesh=null;cSeqQueue=[];cSeqCurrentIdx=0;cSeqDropStart=null;
   allContainers=[];containerScreenshots=[];currentContainerIdx=0;simPalletTotal=0;appPhase='pallet';
   while(containerGroup.children.length)containerGroup.remove(containerGroup.children[0]);
@@ -1987,7 +1994,7 @@ function applySceneTheme(t){
   dirLight.intensity=t.dir;dirLight.color.setHex(t.dirColor);
   fillLight.intensity=t.fill;fillLight.color.setHex(t.fillColor);hemi.intensity=t.hemi;
   palletGroup.children.forEach(child=>{
-    if(child.isMesh&&child.geometry&&child.geometry.type==='PlaneGeometry')child.material.color.setHex(t.floor);
+    if(child.isMesh&&child.geometry&&child.geometry.type==='PlaneGeometry'&&child.geometry.parameters&&child.geometry.parameters.width===600)child.material.color.setHex(t.floor);
     if(child.isLineSegments){const cl=child.material.color.getHex();if(cl===0x2a3a28||cl===0x6a8060)child.material.color.setHex(t.guide);if(cl===0x5a8050||cl===0x7aaa70)child.material.color.setHex(t.guideEdge);}
   });
   gridGroup.children.forEach(child=>{if(child.isGridHelper){child.material[0]&&child.material[0].color.setHex(isDark?0x1e2028:0xcac6be);child.material[1]&&child.material[1].color.setHex(isDark?0x1a1d22:0xd8d4cc);}});
